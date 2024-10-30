@@ -19,8 +19,6 @@ remove_rpl = "_noRPL"
 remove_commonE = ""
 useSTD = "STD"
 crispr_threshold_pos = -1.5
-#drugtarget_nw = "_drugtarget"
-drugtarget_nw = ""
 cell_feat_name = "cnv"
 gene_feat_name = 'cgp'
 
@@ -54,15 +52,6 @@ print(dep_interactions.shape)
 
 # cell gene 합쳐서 int로 되어있어서 각각 분리
 
-# Drug target network
-if drugtarget_nw:
-    with open(BASE_PATH+f'multigraphs/drug_target_network.pickle', 'rb') as handle:
-        drugtarget_nw_obj = pickle.load(handle)
-    drugtarget_interactions = drugtarget_nw_obj.getInteractionNamed()
-    drugs = list(set(drugtarget_nw_obj.getInteractionNamed().Gene_A))
-    drug2id = {d:i for i, d in enumerate(drugs)}
-    drugtarget_interactions.Gene_A = drugtarget_interactions.Gene_A.apply(lambda x: drug2id[x])
-    drugtarget_interactions.Gene_B = drugtarget_interactions.Gene_B.apply(lambda x: ppi_obj_new_gene2int[x])
 
 # Oversample low pos -------------------------------------------------------------------------------------------------------------------------------------
 # crispr_neurobl = pd.read_csv(BASE_PATH+f"data/crispr_{cancer_type}_{ppi}.csv", index_col=0)
@@ -224,20 +213,6 @@ elif "MYCN" in cell_feat_name:
     ccle_MYCN = pd.read_csv('/data/jilim/HetGNN/MYCN_binary.csv', header=0, index_col=0)
     cell_feat = torch.from_numpy(ccle_MYCN.loc[cell2int.keys()].values).to(torch.float)    
 
-# Drug features 
-if drugtarget_nw:
-    from rdkit.Chem import rdFingerprintGenerator
-    from rdkit import Chem
-    primary_screen_info = pd.read_csv('data/primary-screen-replicate-collapsed-treatment-info.csv', header=0, index_col=2)
-    primary_screen_info = primary_screen_info[~primary_screen_info.index.duplicated(keep='first')]
-    primary_screen_info.index = [i+'_drug' if isinstance(i, str) else i for i in primary_screen_info.index]
-    primary_screen_info.smiles.fillna('', inplace=True)
-    primary_screen_info.smiles = primary_screen_info.smiles.apply(lambda x: x.split(',')[0])
-    smiles_drugs = primary_screen_info.loc[drugs].smiles.values
-    mfpgen = rdFingerprintGenerator.GetMorganGenerator(radius=3, fpSize=1024)
-    bit_morganfp = pd.DataFrame([list(mfpgen.GetFingerprint(Chem.MolFromSmiles(i))) if len(i) > 0 else [0]*1024 for i in smiles_drugs],
-                                index=smiles_drugs)
-
 # Construction of the PyTroch geometric heterogeneous graph
 data = HeteroData()
 
@@ -246,21 +221,14 @@ data['gene'].node_id = torch.tensor(list(ppi_obj_new_gene2int.values())) #gene n
 data['gene'].names = list(ppi_obj_new_gene2int.keys()) #gene names
 data['cell'].node_id = torch.tensor(list(cell2int.values()))
 data['cell'].names = list(cell2int.keys())
-if drugtarget_nw:
-    data['drug'].node_id = torch.tensor([drug2id[i] for i in drugs])
-    data['drug'].names = drugs
 
 # Add the node features and edge indices
 data['gene'].x = gene_feat
 data['cell'].x = cell_feat
-if drugtarget_nw:
-    data['drug'].x = torch.from_numpy(bit_morganfp.values).to(torch.float)
-
 
 data['gene', 'interacts_with', 'gene'].edge_index = torch.tensor(ppi_interactions.values.transpose(), dtype=torch.long)
 data['gene', 'dependency_of', 'cell'].edge_index = torch.tensor(dep_interactions.values.transpose(), dtype=torch.long)
-if drugtarget_nw:
-    data['drug', 'has_target', 'gene'].edge_index = torch.tensor(drugtarget_interactions.values.transpose(), dtype=torch.long)
+
 # Convert to undirected graph
 data = T.ToUndirected(merge=False)(data)
 assert data.validate()
@@ -268,4 +236,4 @@ assert data.validate()
 print(data)
 
 torch.save(obj=data, f=BASE_PATH+f"multigraphs/heteroData_gene_cell_{cancer_type.replace(' ', '_')}_{ppi}"\
-          f"_crispr{str(crispr_threshold_pos).replace('.','_')}{drugtarget_nw}_{gene_feat_name}_{cell_feat_name}.pt")
+          f"_crispr{str(crispr_threshold_pos).replace('.','_')}_{gene_feat_name}_{cell_feat_name}.pt")
