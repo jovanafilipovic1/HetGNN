@@ -7,14 +7,15 @@ import torch_geometric.transforms as T
 import torch.functional as F
 import torch
 import pickle 
-from gat_dependency.GAT_model import HeteroData_GNNmodel
+#from models.model_Jihwan import HeteroData_GNNmodel
+from models.HetGNN_Model_Jovana import HeteroData_GNNmodel
 from sklearn.metrics import roc_auc_score, average_precision_score
 from sklearn.model_selection import KFold
 import numpy as np
 import pandas as pd
 import os
 import argparse
-import wandb
+#import wandb
 from datetime import datetime
 from torch_geometric.explain import Explainer, GNNExplainer, ModelConfig
 from torch_geometric import seed_everything
@@ -49,7 +50,7 @@ if __name__=='__main__':
     parser.add_argument('--ppi', type=str, default="Reactome", help='Which ppi to use as scaffold')
     parser.add_argument('--crp_pos', type=float, default=-1.5, help='crispr threshold for positives')
     parser.add_argument('--epochs', type=int, default=30, help='num epochs')
-    parser.add_argument('--npr', type=float, default=3.0, help='Negatiev sampling ratio')
+    parser.add_argument('--npr', type=float, default=3.0, help='Negative sampling ratio')
     parser.add_argument('--emb_dim', type=str, default="512", help='Embedding dimension')
     parser.add_argument('--train_neg_sampling', type=int, default=1, help='If 1(true) negatives will be sampled BEFORE training')
     parser.add_argument('--val_ratio', type=float, default=0.1, help='percentage training data')
@@ -73,7 +74,7 @@ if __name__=='__main__':
     parser.add_argument('--aggregate', type=str, default='mean', help='Aggregation method')
     parser.add_argument('--seed', type=int, default=42, help='Random Seed')
     parser.add_argument('--exp_name', type=str, default='GNN', help='Experiment Name')
-
+    parser.add_argument('--metapaths', type = bool, default=False, help='Use metapaths (True if False)')
 
     args = parser.parse_args()
     now = datetime.now()
@@ -87,7 +88,6 @@ if __name__=='__main__':
     experiment_name = f"{args.exp_name}_{args.cell_feat}_{args.seed}"
     group_name = f"{args.gene_feat}"
 
-   #
    #  if args.log:
     #    run = wandb.init(project="NB_GPU_fin", entity=args.wandb_user,  config=args, name=experiment_name, group=group_name) 
 
@@ -110,6 +110,19 @@ if __name__=='__main__':
                                 f"heteroData_gene_cell_{args.cancer_type.replace(' ', '_')}_{args.ppi}"\
                                     f"_crispr{str(args.crp_pos).replace('.','_')}{args.drugs}_{args.gene_feat}_{args.cell_feat}.pt")
     
+    if args.metapaths:
+        metapaths = [[('gene', 'dependency_of', 'cell'), ('cell', 'rev_dependency_of', 'gene')],
+                    [('cell', 'rev_dependency_of', 'gene'), ('gene', 'dependency_of', 'cell')],]
+        transform = T.AddMetaPaths(metapaths=metapaths, 
+                                keep_same_node_type= True,
+                                drop_unconnected_node_types=False, 
+                                weighted=True,
+                                #drop_orig_edge_types=True,
+                                )
+        heterodata_obj = transform(heterodata_obj)  
+        print(heterodata_obj)
+    
+
     cells, genes = heterodata_obj['cell'].names, heterodata_obj['gene'].names
     if args.drugs:
         drugs = heterodata_obj['drug'].names
@@ -157,18 +170,19 @@ if __name__=='__main__':
     else:
         emb_dim = int(args.emb_dim)
     
+    ##Jihwan's model
     hetGNNmodel = HeteroData_GNNmodel(heterodata=heterodata_obj,   #model defined in GAT_model.py
                                   node_types=node_types,
                                   node_types_to_pred = node_types,
                                   embedding_dim=emb_dim,
-                                  gcn_model=args.gcn_model,
+                                  #gcn_model=args.gcn_model,
                                   features=hidden_features,
-                                  layer_name=args.layer_name,
+                                  #layer_name=args.layer_name,
                                   heads=heads,
                                   dropout=args.dropout,
-                                  act_fn=torch.nn.ReLU(),
+                                  act_fn=torch.nn.ReLU,
                                   lp_model=args.lp_model,
-                                  add_self_loops=False, 
+                                  #add_self_loops=False, #DIT MOET JE WEL TOEVOEGEN!!!
                                   features_dim=features_dim,
                                   aggregate=args.aggregate,
                                   return_attention_weights=False)
@@ -181,7 +195,7 @@ if __name__=='__main__':
 
     for i, cl in enumerate(cls_int):
         # cl = 20
-        x_ = torch.stack((torch.tensor(dep_genes),
+        x_ = torch.stack((torch.tensor(dep_genes), 
                         torch.tensor([cl]*len(dep_genes))), dim=0)
                         
         cl_probs[:, i*len(dep_genes):(i+1)*len(dep_genes)] = x_
