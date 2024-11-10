@@ -198,7 +198,7 @@ class HeteroData_GNNmodel(nn.Module):
 
     def forward(self, data: HeteroData=None, edge_type_label: str=None,
                 return_embeddings: bool=False, x_dict: dict=None) -> Tensor:
-        etl = edge_type_label.split(',') #
+        etl = edge_type_label.split(',') #("gene", dependency_of", "cell")
         # x_dict holds the feature matrix of all node_types
 
         # x_dict = data.x_dict
