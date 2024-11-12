@@ -14,4 +14,4 @@ echo "Module Loading Complete"
 
 cd /data/gent/458/vsc45895/Thesis
 
-python hetgnn_main.py --epochs 30 --lr 0.0001 --batch_size 256 --emb_dim 512 --seed 42 --exp_name example_test
+python hetgnn_main.py --epochs 30 --lr 0.0001 --batch_size 256 --emb_dim 512 --seed 42 --exp_name example_test --metapaths True
