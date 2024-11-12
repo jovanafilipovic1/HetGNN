@@ -30,7 +30,7 @@ ccles['OncotreePrimaryDisease'].value_counts()
 
 path = BASE_PATH+'Depmap/CRISPRGeneEffect.csv'
 crispr_effect = pd.read_csv(path, header=0, index_col=0)
-crispr_effect.columns = [i.split(' ')[0] for i in crispr_effect.columns]
+crispr_effect.columns = [i.split(' ')[0] for i in crispr_effect.columns] #extract the gene name (first part of the first column names)
 
 # Read in PPI and construct prior node embeddings
 # Ndex2 pcnet 
@@ -64,8 +64,8 @@ dis_groups['length'] = dis_groups["cells"].apply(lambda x: len(x))
 # disgroups with 2 columns: cells (list of cellines associated with disease), length (len(cells))
 # OncotreePrimaryDisease is used as index
 
-crispr_neurobl = crispr_effect.loc[dis_groups.loc[cancer_type].cells]
-crispr_neurobl.to_csv(BASE_PATH+f"crispr_{cancer_type.replace(' ', '_')}_{ppi}.csv")
+crispr_neurobl = crispr_effect.loc[dis_groups.loc[cancer_type].cells] #select rows (cell lines) from crispr_effect that are in the dis_groups for the cancer type (Neuroblastoma)
+crispr_neurobl.to_csv(BASE_PATH+f"crispr_{cancer_type.replace(' ', '_')}_{ppi}.csv") #csv file contains  the filtered cell lines (columns) and genes (rows) from crispr_effect
 
 print(crispr_neurobl.shape)
 
@@ -75,6 +75,8 @@ print(crispr_neurobl.shape)
 
 common_essentials_control_df = pd.read_csv(BASE_PATH+f"Depmap/AchillesCommonEssentialControls.csv")
 common_essentials_control = list([i[0].split(' ')[0] for i in common_essentials_control_df.values]) #extract the gene name
+
+#defining non-interesting genes (e.g. Ribosomal proteins = RPL)
 rpls = set([i for i in common_essentials_control if 'RPL' in i]) | set([i for i in ppi_obj.node_names if 'RPL' in i]) |\
         set([i for i in crispr_neurobl.columns if 'RPL' in i]) # remove non interesting genes
 # ppi_obj.getDegreeDF(set_index=True).loc[set(rpls) & set(ppi_obj.node_names)]
@@ -84,12 +86,12 @@ std_dependencies = list(crispr_neurobl.columns[crispr_neurobl.std() > std_thresh
 
 if remove_commonE:
     print("Removing common essentials")
-    if remove_rpl:
+    if remove_rpl: #remove common essentials and ribosomal proteins
         final_pos = list(set(std_dependencies) - set(common_essentials_control) - rpls)
     else:
         final_pos = list(set(std_dependencies) - set(common_essentials_control))
 else:
-    if remove_rpl:
+    if remove_rpl: #remove ribosomal proteins
         final_pos = list(set(std_dependencies) - rpls)
     else:
         final_pos = std_dependencies
@@ -100,7 +102,7 @@ dependency_edgelist = []
 dependency_edgelist_neg = []
 X_train_dep, y_train_dep = [], []
 X_test_dep, y_test_dep = [], []
-for cell, row_genes in crispr_neurobl.iterrows():
+for cell, row_genes in crispr_neurobl.iterrows(): #iterate over rows (cell lines) in crispr_neurobl
     tmp = row_genes[final_pos]
 
     tmp_pos = list(tmp[tmp < crispr_threshold_pos].index)
@@ -113,10 +115,10 @@ for cell, row_genes in crispr_neurobl.iterrows():
     tmp_neg_train = tmp_neg[:int(len(tmp_neg)*train_ratio)]
     tmp_neg_test = tmp_neg[int(len(tmp_neg)*train_ratio):]
 
-    cell2dependency[cell] = list(tmp_pos)
-    dependency_edgelist += [[cell, i] for i in tmp_pos]
-    X_train_dep += [[cell, i] for i in tmp_pos_train+tmp_neg_train]
-    y_train_dep += [1]*len(tmp_pos_train) + [0]*len(tmp_neg_train)
+    cell2dependency[cell] = list(tmp_pos) #store the genes that are below threshold -1,5 for each cell line
+    dependency_edgelist += [[cell, i] for i in tmp_pos] 
+    X_train_dep += [[cell, i] for i in tmp_pos_train+tmp_neg_train] 
+    y_train_dep += [1]*len(tmp_pos_train) + [0]*len(tmp_neg_train) #label 1 for positive edges, 0 for negative edges (=dependencies)
     X_test_dep += [[cell, i] for i in tmp_pos_test+tmp_neg_test]
     y_test_dep += [1]*len(tmp_pos_test) + [0]*len(tmp_neg_test)
 
@@ -138,7 +140,6 @@ dep_nw_obj.set_node_types(node_types={i: "cell" if i in crispr_neurobl.index els
 # Create multigraph directory if it doesn't exist
 multigraphs_dir = os.path.join(BASE_PATH, 'multigraphs')
 os.makedirs(multigraphs_dir, exist_ok=True)
-
 
 node_types = ppi_obj.node_type_names
 node_types.update(dep_nw_obj.node_type_names)

@@ -218,7 +218,7 @@ if __name__=='__main__':
     transform_traintest = T.RandomLinkSplit(num_val=args.val_ratio,
                                             num_test=args.test_ratio,
                                             disjoint_train_ratio=args.disjoint_train_ratio,
-                                            neg_sampling_ratio=args.npr,
+                                            neg_sampling_ratio=args.npr, #if npr 3 this means that for each positive edge 3 negative edges are sampled
                                             add_negative_train_samples=args.train_neg_sampling,
                                             edge_types=('gene', 'dependency_of', 'cell'),
                                             rev_edge_types=('cell', 'rev_dependency_of', 'gene'),
