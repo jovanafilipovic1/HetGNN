@@ -84,10 +84,7 @@ class Create_heterogeneous_graph:
 
     def filter_data(self, ccles: pd.DataFrame, crispr_effect: pd.DataFrame, ppi_obj: UndirectedInteractionNetwork) -> Tuple[pd.DataFrame, List[str], List[str]]:
         """
-        Filter data to select relevant genes and cell lines.
-        
-        This function identifies genes and cell lines that are present in both the 
-        protein-protein interaction network and the CRISPR dependency data. 
+        Filter data to select relevant genes and cell lines. 
         For constructing the graph, genes present in the gene-cell dependency network 
         but absent from the PPI network will be filtered out.
         
@@ -129,7 +126,7 @@ class Create_heterogeneous_graph:
         """
         Filter genes based on standard deviation, removing common essentials and ribosomal proteins.
         
-        This is a critical step that identifies informative genes for dependency analysis:
+        This is a critical step that identifies informative genes that will be used to create the dependency network:
         - Genes with standard deviation > 0.2 (to ensure selection of significant and informative genes)
         - Excluding common essential genes (to focus on cancer-specific dependencies)
         - Excluding ribosomal proteins
@@ -414,11 +411,19 @@ class Create_heterogeneous_graph:
         Returns:
             HeteroData: The HeteroData object with added metapaths
         """
+
+        MP = []
         if self.metapaths is None:
             return data
-            
+        if "gene_cell_gene" in self.metapaths:
+            MP.append( [("gene", "dependency_of", "cell"), ("cell", "rev_dependency_of", "gene")])
+        if "cell_gene_cell" in self.metapaths:
+            MP.append([("cell", "rev_dependency_of", "gene"), ("gene", "dependency_of", "cell")])  
+        
+        print(MP)
+
         transform = T.AddMetaPaths(
-            metapaths=self.metapaths,
+            metapaths=MP,
             keep_same_node_type=True,
             drop_unconnected_node_types=False,
             weighted=True,
@@ -433,7 +438,7 @@ class Create_heterogeneous_graph:
         The pipeline follows these steps:
         1. Load raw data (CRISPR, PPI, cell line metadata)
         2. Filter for genes and cells present in the networks
-        3. Filter for informative genes (high std, not common essential, not RPL) to create dependency network using only informative genes
+        3. Filter for informative genes (high std, not common essential, not RPL) to create dependency network 
         4. Process features for genes and cells
         5. Construct final heterogeneous graph with only nodes that have features
         6. Add metapaths if specified
@@ -492,6 +497,17 @@ class Create_heterogeneous_graph:
             dependency_edgelist['cell'].isin(final_cells)
         ]
         
+        # Convert edge lists to tensors with explicit dtype and ensure contiguity
+        ppi_edge_index = torch.tensor([
+            [gene2int[row.Gene_A], gene2int[row.Gene_B]] 
+            for _, row in ppi_edges.iterrows()
+        ], dtype=torch.long).t().contiguous()
+        
+        dep_edge_index = torch.tensor([
+            [gene2int[row.gene], cell2int[row.cell]] 
+            for _, row in dependency_edgelist.iterrows()
+        ], dtype=torch.long).t().contiguous()
+        
         # Create PyTorch Geometric HeteroData object
         data = HeteroData()
         
@@ -501,20 +517,9 @@ class Create_heterogeneous_graph:
         data['cell'].node_id = torch.tensor(list(range(len(final_cells))))
         data['cell'].names = final_cells
         
-        # Add node features
-        data['gene'].x = gene_feat
-        data['cell'].x = cell_feat
-        
-        # Convert edge lists to tensors
-        ppi_edge_index = torch.tensor([
-            [gene2int[row.Gene_A], gene2int[row.Gene_B]] 
-            for _, row in ppi_edges.iterrows()
-        ]).t()
-        
-        dep_edge_index = torch.tensor([
-            [gene2int[row.gene], cell2int[row.cell]] 
-            for _, row in dependency_edgelist.iterrows()
-        ]).t()
+        # Add node features - ensure they are contiguous
+        data['gene'].x = gene_feat.contiguous()
+        data['cell'].x = cell_feat.contiguous()
         
         # Add edge indices
         data['gene', 'interacts_with', 'gene'].edge_index = ppi_edge_index
@@ -523,11 +528,16 @@ class Create_heterogeneous_graph:
         # Convert to undirected graph
         data = T.ToUndirected(merge=False)(data)
         
+        # Ensure all tensors are contiguous after ToUndirected transformation
+        for edge_type in data.edge_types:
+            if hasattr(data[edge_type], 'edge_index'):
+                data[edge_type].edge_index = data[edge_type].edge_index.contiguous()
+        
         # Validate the data
         assert data.validate(), "HeteroData validation failed"
         
         # Add metapaths if specified
-        if self.metapaths is not None:
+        if self.metapaths:
             print("Adding metapaths to the graph...")
             data = self.add_metapaths(data)
         
@@ -535,7 +545,7 @@ class Create_heterogeneous_graph:
         filepath = os.path.join(
             self.BASE_PATH,
             'multigraphs',
-            f"heteroData_gene_cell_{self.cancer_type.replace(' ', '_') if self.cancer_type else 'All'}_{self.gene_feature}_{self.cell_feature}.pt"
+                f'heteroData_gene_cell_{self.cancer_type.replace(" ", "_") if self.cancer_type else "All"}_{self.gene_feature}_{self.cell_feature}_{"META" if self.metapaths else ""}.pt'
         )
         os.makedirs(os.path.dirname(filepath), exist_ok=True)
         torch.save(obj=data, f=filepath)
