@@ -1,0 +1,32 @@
+{   "experiment_name": "Neurblastoma, MOSA, cgp, model_Jovana",
+    "data": {
+      "cancer_type": "Neuroblastoma",
+      "base_path": "./Data/",
+      "cell_feat_name": "MOSA",
+      "gene_feat_name": "cgp"
+    },
+    "graph": {
+      "ppi_train_ratio": 0.8,
+      "metapaths": [
+        [["gene", "dependency_of", "cell"], ["cell", "rev_dependency_of", "gene"]],
+        [["cell", "rev_dependency_of", "gene"], ["gene", "dependency_of", "cell"]]
+      ]
+    },
+    "model": {
+      "hidden_channels": 64,
+      "out_channels": 32,
+      "num_layers": 2,
+      "dropout": 0.2,
+      "lr": 0.01,
+      "weight_decay": 0.0005,
+      "epochs": 100
+    },
+    "training": {
+      "device": "auto",
+      "seed": 37,
+      "batch_size": 64,
+      "validation_ratio": 0.1,
+      "test_ratio": 0.1
+    }
+  }
+  

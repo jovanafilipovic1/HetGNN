@@ -1,10 +1,8 @@
 import sys
 #sys.path.append('/Users/jovanafilipovic/Downloads/MSc Bioinformatics/Year 2/Thesis/Python_scripts')
-
 from NetworkAnalysis.MultiGraph import MultiGraph
 from NetworkAnalysis.UndirectedInteractionNetwork import UndirectedInteractionNetwork
 from itertools import combinations
-
 import matplotlib.pyplot as plt
 import seaborn as sns
 import pandas as pd
@@ -14,9 +12,10 @@ import os
 
 BASE_PATH = "./Data/"
 cancer_type = "Neuroblastoma"
+#cancer_type = None
 train_ratio = 0.8
 ppi = "Reactome"
-remove_rpl = "_noRPL"
+remove_rpl = "_noRPL" #remove ribosomal proteins 
 remove_commonE = ""  #this will not be removed
 useSTD = "STD"
 crispr_threshold_pos = -1.5
@@ -26,11 +25,11 @@ ppi_train_ratio = 0.8
 ccles_ori = pd.read_csv(BASE_PATH+"Depmap/Model.csv", index_col=0)
 # ccles = ccles_ori.loc[ccles_ori.PatientID.drop_duplicates().index]
 ccles = ccles_ori
-ccles['OncotreePrimaryDisease'].value_counts()
+ccles['OncotreePrimaryDisease'].value_counts() 
 
 path = BASE_PATH+'Depmap/CRISPRGeneEffect.csv'
 crispr_effect = pd.read_csv(path, header=0, index_col=0)
-crispr_effect.columns = [i.split(' ')[0] for i in crispr_effect.columns] #extract the gene name (first part of the first column names)
+crispr_effect.columns = [i.split(' ')[0] for i in crispr_effect.columns] #extract the gene name (first part of the first row names)
 
 # Read in PPI and construct prior node embeddings
 # Ndex2 pcnet 
@@ -50,21 +49,23 @@ degreedf.loc[['BRIP1', 'RRM2']]
 focus_genes = sorted(list(set(ppi_obj.node_names) & set(crispr_effect.columns))) #select genes that are in both ppi and crispr
 #assert len(focus_genes) == ppi_obj.N_nodes,"Error node mismatch" #12951 / 13953
 
-focus_genes2int = {k:i for i, k in enumerate(focus_genes)}
-focus_int2gene = {v:k for k, v in focus_genes2int.items()}
+#focus_genes2int = {k:i for i, k in enumerate(focus_genes)}
+#focus_int2gene = {v:k for k, v in focus_genes2int.items()}
 
 focus_cls = sorted(list(set(ccles.index) & set(crispr_effect.index))) #select cell lines that are in both ccles and crispr
-
 ccles = ccles.loc[focus_cls, :] # filter only focus cell line
 crispr_effect = crispr_effect.loc[focus_cls, focus_genes] # filter only focus cell line & gene
+
 dis_groups_d = ccles.groupby('OncotreePrimaryDisease').groups
 dis_groups = pd.DataFrame.from_dict(dis_groups_d, orient='index').map(lambda x: '' if x is None else x) 
-dis_groups = dis_groups.apply(lambda x: ','.join(x), axis=1).apply(lambda x: [i for i in x.split(',') if i]).to_frame(name='cells')
+dis_groups = dis_groups.apply(lambda x: ','.join(x), axis=1).apply(lambda x: [i for i in x.split(',') if i]).to_frame(name='cells') 
 dis_groups['length'] = dis_groups["cells"].apply(lambda x: len(x)) 
 # disgroups with 2 columns: cells (list of cellines associated with disease), length (len(cells))
 # OncotreePrimaryDisease is used as index
 
-crispr_neurobl = crispr_effect.loc[dis_groups.loc[cancer_type].cells] #select rows (cell lines) from crispr_effect that are in the dis_groups for the cancer type (Neuroblastoma)
+if cancer_type:
+    crispr_neurobl = crispr_effect.loc[dis_groups.loc[cancer_type].cells] #select rows (cell lines) from crispr_effect that are in the dis_groups for the cancer type (Neuroblastoma)
+
 crispr_neurobl.to_csv(BASE_PATH+f"crispr_{cancer_type.replace(' ', '_')}_{ppi}.csv") #csv file contains  the filtered cell lines (columns) and genes (rows) from crispr_effect
 
 print(crispr_neurobl.shape)
@@ -77,8 +78,7 @@ common_essentials_control_df = pd.read_csv(BASE_PATH+f"Depmap/AchillesCommonEsse
 common_essentials_control = list([i[0].split(' ')[0] for i in common_essentials_control_df.values]) #extract the gene name
 
 #defining non-interesting genes (e.g. Ribosomal proteins = RPL)
-rpls = set([i for i in common_essentials_control if 'RPL' in i]) | set([i for i in ppi_obj.node_names if 'RPL' in i]) |\
-        set([i for i in crispr_neurobl.columns if 'RPL' in i]) # remove non interesting genes
+rpls = set([i for i in common_essentials_control if 'RPL' in i]) | set([i for i in ppi_obj.node_names if 'RPL' in i]) | set([i for i in crispr_neurobl.columns if 'RPL' in i]) # remove non interesting genes
 # ppi_obj.getDegreeDF(set_index=True).loc[set(rpls) & set(ppi_obj.node_names)]
 
 std_threshold = 0.2
