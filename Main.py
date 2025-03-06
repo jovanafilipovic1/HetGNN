@@ -43,7 +43,7 @@ if __name__ == "__main__":
         config = json.load(config_file)
 
     #Extract parameters 
-    print(config["experiment_name"])
+    print("Experiment name: ", config["experiment_name"])
     data_params = config['data']
     graph_params = config['graph']
     model_params = config['model']
@@ -52,9 +52,9 @@ if __name__ == "__main__":
     #read in (or make) heterodata_object
     try:
         filepath = os.path.join(
-            data_params(BASE_PATH),
+            data_params["base_path"],
             'multigraphs',
-            f"heteroData_gene_cell_{data_params(cancer_type).replace(' ', '_') if data_params(cancer_type) else 'All'}_{data_params(gene_feat_name)}_{data_params(cell_feat_name)}.pt"
+            f'heteroData_gene_cell_{data_params["cancer_type"].replace(" ", "_") if data_params["cancer_type"] else "All"}_{data_params["gene_feat_name"]}_{data_params["cell_feat_name"]}_{"META" if graph_params["metapaths"] else ""}.pt'
         )
         heterodata_obj = torch.load(filepath)
         print(f"Loaded heterodata object from {filepath}")
@@ -62,11 +62,11 @@ if __name__ == "__main__":
     except:
         print("No file found, creating new one")
         graph_creator = Create_heterogeneous_graph(
-            BASE_PATH=data_params(BASE_PATH),
-            cancer_type=data_params(cancer_type),
-            cell_feature=data_params(cell_feat_name),
-            gene_feature=data_params(gene_feat_name),
-            metapaths=graph_params(metapaths)
+            BASE_PATH=data_params["base_path"],
+            cancer_type=data_params["cancer_type"],
+            cell_feature=data_params["cell_feat_name"],
+            gene_feature=data_params["gene_feat_name"],
+            metapaths=graph_params["metapaths"]
         )
         heterodata_obj = graph_creator.run_pipeline()
 

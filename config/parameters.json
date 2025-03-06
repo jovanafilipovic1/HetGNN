@@ -7,10 +7,7 @@
     },
     "graph": {
       "ppi_train_ratio": 0.8,
-      "metapaths": [
-        [["gene", "dependency_of", "cell"], ["cell", "rev_dependency_of", "gene"]],
-        [["cell", "rev_dependency_of", "gene"], ["gene", "dependency_of", "cell"]]
-      ]
+      "metapaths": [ "gene_cell_gene", "cell_gene_cell" ]
     },
     "model": {
       "hidden_channels": 64,
