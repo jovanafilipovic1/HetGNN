@@ -182,7 +182,7 @@ if __name__=='__main__':
                                   dropout=args.dropout,
                                   act_fn=torch.nn.ReLU,
                                   lp_model=args.lp_model,
-                                  #add_self_loops=False, #DIT MOET JE WEL TOEVOEGEN!!!
+                                  #add_self_loops=False, #DIT MOET JE WEL TOEVOEGEN!!!?
                                   features_dim=features_dim,
                                   aggregate=args.aggregate,
                                   return_attention_weights=False)

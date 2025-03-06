@@ -44,9 +44,9 @@ dep_interactions = dep_obj.getInteractionNamed() #2 columns: Gene_A (=cell line)
 dep_genes = [dep_obj.int2gene[i] for i in dep_obj.type2nodes['gene']] #list of genes with a dependecy edge
 
 dep_interactions.loc[~dep_interactions.Gene_A.isin(cells), ['Gene_A', 'Gene_B']] = \
-    dep_interactions.loc[~dep_interactions.Gene_A.isin(cells), ['Gene_B', 'Gene_A']].values # assure that all values in Gene_A are cells, otherwise switch with the gene column
+    dep_interactions.loc[~dep_interactions.Gene_A.isin(cells), ['Gene_B', 'Gene_A']].values # assure that all values in Gene_A are cells, otherwise switch columns
 
-assert dep_interactions.Gene_A.isin(cells).sum() == dep_interactions.shape[0] #all Gene_A should be cell lines
+assert (dep_interactions.Gene_A.isin(cells).sum() == dep_interactions.shape[0] , "This is not a depencency (two genes)") #all Gene_A should be cell lines
 dep_interactions = dep_interactions.map(lambda x: cell2int[x] if x in cell2int else ppi_obj_new_gene2int[x]) #map cell lines and genes to their resp. integers
 dep_interactions = dep_interactions[['Gene_B', 'Gene_A']] #switch columns (gene, cell line)
 print(dep_interactions.shape)
@@ -101,7 +101,7 @@ for k, v in cgn.items():
 zero_gene_feat = cgn_df.index[cgn_df.sum(axis=1) == 0] # This is not allowed because all genes must have features
 # Check how many of the dep genes are in that all 0, otherwise this is basically of no use
 zero_depgenes = set(zero_gene_feat) & set(dep_genes) #genes that are in the dep_genes and have no features
-print(len(zero_depgenes))
+print(len(zero_depgenes)) #len = 1, but why not removing ??
 
 #gene featur matrix (rows=genes) 
 gene_feat = torch.from_numpy(cgn_df.values).to(torch.float) ##why not filtering???? 크키맞출라고
