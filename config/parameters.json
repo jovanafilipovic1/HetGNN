@@ -1,8 +1,8 @@
-{   "experiment_name": "Neurblastoma, MOSA, cgp, model_Jovana",
+{   "experiment_name": "All cancer types, cnv, cgp, model_Jovana",
     "data": {
       "cancer_type": "Neuroblastoma",
       "base_path": "./Data/",
-      "cell_feat_name": "MOSA",
+      "cell_feat_name": "cnv",
       "gene_feat_name": "cgp"
     },
     "graph": {
@@ -19,11 +19,9 @@
       "epochs": 100
     },
     "training": {
-      "device": "auto",
-      "seed": 37,
       "batch_size": 64,
       "validation_ratio": 0.1,
-      "test_ratio": 0.1
+      "test_ratio": 0.2
     }
   }
   

@@ -124,12 +124,7 @@ class Create_heterogeneous_graph:
 
     def filter_informative_genes(self, crispr_data: pd.DataFrame) -> List[str]:
         """
-        Filter genes based on standard deviation, removing common essentials and ribosomal proteins.
-        
-        This is a critical step that identifies informative genes that will be used to create the dependency network:
-        - Genes with standard deviation > 0.2 (to ensure selection of significant and informative genes)
-        - Excluding common essential genes (to focus on cancer-specific dependencies)
-        - Excluding ribosomal proteins
+        Filter for informative genes based on standard deviation and ribosomal proteins (and excluding common essential genes).
         
         Args:
             crispr_data (pd.DataFrame): CRISPR gene dependency scores
@@ -149,36 +144,36 @@ class Create_heterogeneous_graph:
         std_dependencies = list(crispr_data.columns[crispr_data.std() > self.std_threshold])
         
         # Remove common essentials and ribosomal proteins
-        informative_genes = list(set(std_dependencies) - set(common_essentials_control) - rpls)
-        
-        print(f"Original genes: {len(crispr_data.columns)}")
-        print(f"After std filtering: {len(std_dependencies)}")
-        print(f"After removing common essentials and RPL: {len(informative_genes)}")
-        
+        # informative_genes = list(set(std_dependencies) - set(common_essentials_control) - rpls)
+        # Keep common essential genes, only remove ribosomal proteins and low variance genes
+        informative_genes = list(set(std_dependencies) - rpls)
+
         return informative_genes
 
     def create_dependency_network(self, crispr_effect: pd.DataFrame, informative_genes: List[str]) -> pd.DataFrame:
         """
-        Create a dependency network from CRISPR data using only informative genes.
+        Create a dependency network from CRISPR data using only informative genes. Low scores are considered as dependencies.
         
         Args:
             crispr_effect (pd.DataFrame): CRISPR gene dependency scores
             informative_genes (List[str]): List of informative genes to consider for dependencies
             
         Returns:
-            pd.DataFrame: Dependency edge list
+            pd.DataFrame: Dependency edge list with columns ['gene', 'cell']
         """
-        dependency_edgelist = []
+        dependency_edges = []
         
         for cell, row_genes in crispr_effect.iterrows():
-            # Only consider informative genes for dependencies
             tmp = row_genes[informative_genes]
-            # Get genes with scores below the dependency threshold
             tmp_pos = list(tmp[tmp < self.crispr_threshold_pos].index)
-            # Add edges between cell and dependent genes
-            dependency_edgelist += [[cell, gene] for gene in tmp_pos]
-
-        return pd.DataFrame(dependency_edgelist, columns=['cell', 'gene'])
+            # Create edges with consistent [gene, cell] ordering
+            for gene in tmp_pos:
+                dependency_edges.append([gene, cell])
+        
+        # Create dataframe
+        dependency_df = pd.DataFrame(dependency_edges, columns=['gene', 'cell'])
+        
+        return dependency_df
 
     def read_gmt_file(self, file_path: str, gene_list: List[str]) -> Dict[str, Set[str]]:
         """
@@ -362,7 +357,7 @@ class Create_heterogeneous_graph:
 
     def process_cell_features(self, cells: List[str]) -> Tuple[torch.Tensor, Dict[str, int], Set[str]]:
         """
-        Process cell features: identify cells with features and create feature tensor.
+        Process cell line features based on the specified feature type.
         
         Args:
             cells (List[str]): List of cell lines to process
@@ -377,29 +372,29 @@ class Create_heterogeneous_graph:
             ValueError: If no cells have the required features or if the feature type is unsupported
         """
         cells_set = set(cells)  # Convert to set for efficient operations
+        print(f"Processing features for {len(cells_set)} cells, feature type: {self.cell_feature}")
         
-        try:
-            if self.cell_feature == "MOSA":
-                features_df = self._process_mosa_features(cells_set)
-            elif "expression" in self.cell_feature:
-                features_df = self._process_expression_features(cells_set)
-            elif self.cell_feature == "cnv":
-                features_df = self._process_cnv_features(cells_set)
-            else:
-                raise ValueError(f"Unsupported cell feature type: {self.cell_feature}")
-                
-            # Find cells that have features
-            valid_cells = cells_set & set(features_df.index)
-            if len(valid_cells) != len(cells_set):
-                missing_cells = cells_set - valid_cells
-                print(f"Warning: {len(missing_cells)} cells are missing {self.cell_feature} features:")
-                print(sorted(list(missing_cells))[:5], "..." if len(missing_cells) > 5 else "")
-                
-            return self._create_cell_feature_tensor(features_df, valid_cells)
+        # Process cell features based on specified feature type
+        if self.cell_feature == "MOSA":
+            features_df = self._process_mosa_features(cells_set)
+        elif "expression" in self.cell_feature:
+            features_df = self._process_expression_features(cells_set)
+        elif self.cell_feature == "cnv":
+            features_df = self._process_cnv_features(cells_set)
+        else:
+            raise ValueError(f"Unsupported cell feature type: {self.cell_feature}")
             
-        except Exception as e:
-            print(f"Error processing {self.cell_feature} features: {str(e)}")
-            raise
+        # Find cells that have features
+        valid_cells = cells_set & set(features_df.index)
+        if len(valid_cells) != len(cells_set):
+            missing_cells = cells_set - valid_cells
+            print(f"Warning: {len(missing_cells)} cells are missing features:")
+            print(sorted(list(missing_cells))[:5], "..." if len(missing_cells) > 5 else "")
+            
+        if not valid_cells:
+            raise ValueError(f"No cells have valid features")
+            
+        return self._create_cell_feature_tensor(features_df, valid_cells)
 
     def add_metapaths(self, data: HeteroData) -> HeteroData:
         """
@@ -411,15 +406,20 @@ class Create_heterogeneous_graph:
         Returns:
             HeteroData: The HeteroData object with added metapaths
         """
-
-        MP = []
         if self.metapaths is None:
             return data
+            
+        # Make all edge indices contiguous before adding metapaths
+        for edge_type in data.edge_types:
+            if hasattr(data[edge_type], 'edge_index'):
+                data[edge_type].edge_index = data[edge_type].edge_index.contiguous()
+        
+        MP = []
         if "gene_cell_gene" in self.metapaths:
             MP.append( [("gene", "dependency_of", "cell"), ("cell", "rev_dependency_of", "gene")])
         if "cell_gene_cell" in self.metapaths:
-            MP.append([("cell", "rev_dependency_of", "gene"), ("gene", "dependency_of", "cell")])  
-        
+            MP.append([("cell", "rev_dependency_of", "gene"), ("gene", "dependency_of", "cell")]) 
+
         print(MP)
 
         transform = T.AddMetaPaths(
@@ -429,7 +429,35 @@ class Create_heterogeneous_graph:
             weighted=True,
             drop_orig_edge_types=False,
         )
-        return transform(data)
+        return transform(data) 
+        
+
+    def validate_edges(self, data: HeteroData, gene2int: Dict[str, int], cell2int: Dict[str, int]) -> bool:
+        """
+        Validate edge indices match node mappings.
+        
+        Args:
+            data (HeteroData): Graph data
+            gene2int (Dict[str, int]): Gene to index mapping
+            cell2int (Dict[str, int]): Cell to index mapping
+            
+        Returns:
+            bool: True if all edges are valid
+        """
+        # Validate gene-gene edges
+        gene_edges = data['gene', 'interacts_with', 'gene'].edge_index
+        max_gene_idx = len(gene2int) - 1
+        if torch.any(gene_edges > max_gene_idx):
+            raise ValueError(f"Invalid gene index in PPI edges: max allowed {max_gene_idx}")
+            
+        # Validate gene-cell edges
+        dep_edges = data['gene', 'dependency_of', 'cell'].edge_index
+        if torch.any(dep_edges[0] > max_gene_idx):
+            raise ValueError(f"Invalid gene index in dependency edges: max allowed {max_gene_idx}")
+        if torch.any(dep_edges[1] > len(cell2int) - 1):
+            raise ValueError(f"Invalid cell index in dependency edges: max allowed {len(cell2int) - 1}")
+            
+        return True
 
     def run_pipeline(self) -> HeteroData:
         """
@@ -525,6 +553,9 @@ class Create_heterogeneous_graph:
         data['gene', 'interacts_with', 'gene'].edge_index = ppi_edge_index
         data['gene', 'dependency_of', 'cell'].edge_index = dep_edge_index
         
+        # Validate edges before converting to undirected
+        self.validate_edges(data, gene2int, cell2int)
+        
         # Convert to undirected graph
         data = T.ToUndirected(merge=False)(data)
         
@@ -532,6 +563,9 @@ class Create_heterogeneous_graph:
         for edge_type in data.edge_types:
             if hasattr(data[edge_type], 'edge_index'):
                 data[edge_type].edge_index = data[edge_type].edge_index.contiguous()
+        
+        # Validate edges after undirected conversion
+        self.validate_edges(data, gene2int, cell2int)
         
         # Validate the data
         assert data.validate(), "HeteroData validation failed"
@@ -541,11 +575,14 @@ class Create_heterogeneous_graph:
             print("Adding metapaths to the graph...")
             data = self.add_metapaths(data)
         
+        # Final validation after all transformations
+        self.validate_edges(data, gene2int, cell2int)
+        
         # Save the HeteroData object
         filepath = os.path.join(
             self.BASE_PATH,
             'multigraphs',
-                f'heteroData_gene_cell_{self.cancer_type.replace(" ", "_") if self.cancer_type else "All"}_{self.gene_feature}_{self.cell_feature}_{"META" if self.metapaths else ""}.pt'
+            f'heteroData_gene_cell_{self.cancer_type.replace(" ", "_") if self.cancer_type else "All"}_{self.gene_feature}_{self.cell_feature}_{"META" if self.metapaths else ""}.pt'
         )
         os.makedirs(os.path.dirname(filepath), exist_ok=True)
         torch.save(obj=data, f=filepath)
