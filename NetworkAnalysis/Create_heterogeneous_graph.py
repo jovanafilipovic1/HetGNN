@@ -1,21 +1,13 @@
-import sys
-#sys.path.append('/Users/jovanafilipovic/Downloads/MSc Bioinformatics/Year 2/Thesis/Python_scripts')
+import os
 from .MultiGraph import MultiGraph
 from .UndirectedInteractionNetwork import UndirectedInteractionNetwork
-from itertools import combinations
-import matplotlib.pyplot as plt
-import seaborn as sns
 import pandas as pd
 import numpy as np
-import pickle
-import os
+import torch
 import torch_geometric.transforms as T
 from torch_geometric.transforms import to_undirected
 from torch_geometric.data import HeteroData
-import gseapy as gp
-import random
-import torch
-from typing import Dict, List, Set, Tuple, Union, Optional
+from typing import Dict, List, Set, Tuple, Optional
 
 
 class Create_heterogeneous_graph:
