@@ -1,27 +1,44 @@
 {   "experiment_name": "All cancer types, cnv, cgp, model_Jovana",
+    "seed": 42,
+    "crp_pos": -1.5,
     "data": {
       "cancer_type": "Neuroblastoma",
       "base_path": "./Data/",
       "cell_feat_name": "cnv",
-      "gene_feat_name": "cgp"
+      "gene_feat_name": "cgp",
+      "ppi": "Reactome",
+      "remove_rpl": false,
+      "remove_commonE": false,
+      "useSTD": true
     },
     "graph": {
       "ppi_train_ratio": 0.8,
       "metapaths": [ "gene_cell_gene", "cell_gene_cell" ]
     },
     "model": {
-      "hidden_channels": 64,
+      "hidden_features": "-1,256,128",
       "out_channels": 32,
       "num_layers": 2,
       "dropout": 0.2,
       "lr": 0.01,
       "weight_decay": 0.0005,
-      "epochs": 100
+      "epochs": 30,
+      "emb_dim": "512",
+      "heads": "1,1",
+      "lp_model": "simple",
+      "gcn_model": "simple",
+      "layer_name": "sageconv",
+      "aggregate": "mean"
     },
     "training": {
-      "batch_size": 64,
+      "batch_size": 128,
       "validation_ratio": 0.1,
-      "test_ratio": 0.2
+      "test_ratio": 0.2,
+      "disjoint_train_ratio": 0.0,
+      "train_neg_sampling": true,
+      "negative_sampling_ratio": 3.0,
+      "save_full_pred": true,
+      "plot_cell_embeddings": false
     }
   }
   

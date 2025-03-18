@@ -33,7 +33,7 @@ def construct_complete_predMatrix(total_predictions: np.array,
         tmp = total_preds_df.iloc[i*dep_df.shape[1]:(i+1)*dep_df.shape[1]]
         dep_df.loc[tmp.cell.iloc[0], tmp.gene.values] = tmp['prob'].values
 
-    return dep_df
+    return dep_df  #this function creates a dataframe with the predicted dependencies for each cell line (row) and gene (column)
 
 if __name__=='__main__':
     parser = argparse.ArgumentParser(description='args')
@@ -45,7 +45,7 @@ if __name__=='__main__':
    #  parser.add_argument('--wandb_user', type=str, default='jilim97', help='wandb username')
 
     # model and train args
-    parser.add_argument('--cancer_type', type=str, default='Neuroblastoma', help='Cancer type to train for')
+    parser.add_argument('--cancer_type', type=str, default=None, help='Cancer type to train for')
     parser.add_argument('--drugs', type=int, default="0", help='Use the intergrated graph with drugs and targets')
     parser.add_argument('--ppi', type=str, default="Reactome", help='Which ppi to use as scaffold')
     parser.add_argument('--crp_pos', type=float, default=-1.5, help='crispr threshold for positives')
@@ -85,8 +85,9 @@ if __name__=='__main__':
 
     seed_everything(args.seed)
 
-    experiment_name = f"{args.exp_name}_{args.cell_feat}_{args.seed}"
+    experiment_name = f"{args.exp_name}_{args.cell_feat}_{args.seed}_{args.cancer_type.replace(' ', '_') if args.cancer_type else 'All'}"
     group_name = f"{args.gene_feat}"
+    print(experiment_name)
 
    #  if args.log:
     #    run = wandb.init(project="NB_GPU_fin", entity=args.wandb_user,  config=args, name=experiment_name, group=group_name) 
@@ -97,7 +98,7 @@ if __name__=='__main__':
     gpu_available = torch.cuda.is_available()
     print(f"GPU Available: {gpu_available}")
     if gpu_available:
-        device = 'cuda:1'
+        device = 'cuda:0'
     else:
         device = 'cpu'
 
@@ -107,19 +108,12 @@ if __name__=='__main__':
                                     f"_crispr{str(args.crp_pos).replace('.','_')}{args.drugs}_cgp_cnv.pt")'''
     
     heterodata_obj = torch.load(BASE_PATH+f"multigraphs/"\
-                                f"heteroData_gene_cell_{args.cancer_type.replace(' ', '_')}_{args.ppi}"\
-                                    f"_crispr{str(args.crp_pos).replace('.','_')}{args.drugs}_{args.gene_feat}_{args.cell_feat}.pt")
+                                f"heteroData_gene_cell_{args.cancer_type.replace(' ', '_') if args.cancer_type else 'All'}_"\
+                                    f"{args.gene_feat}_{args.cell_feat}_{'META' if args.metapaths else ''}.pt")
     
     if args.metapaths:
         metapaths = [[('gene', 'dependency_of', 'cell'), ('cell', 'rev_dependency_of', 'gene')],
                     [('cell', 'rev_dependency_of', 'gene'), ('gene', 'dependency_of', 'cell')],]
-        transform = T.AddMetaPaths(metapaths=metapaths, 
-                                keep_same_node_type= True,
-                                drop_unconnected_node_types=False, 
-                                weighted=True,
-                                #drop_orig_edge_types=True,
-                                )
-        heterodata_obj = transform(heterodata_obj)  
         print(heterodata_obj)
     
 
@@ -131,14 +125,34 @@ if __name__=='__main__':
     cell2int = dict(zip(heterodata_obj['cell'].names, heterodata_obj['cell'].node_id.numpy()))
     gene2int = dict(zip(heterodata_obj['gene'].names, heterodata_obj['gene'].node_id.numpy()))
     dep_genes = list(set(heterodata_obj['gene', 'dependency_of', 'cell'].edge_index[0].numpy())) # all genes that have a dependency edge
-
-    crispr_neurobl = pd.read_csv(BASE_PATH+f"crispr_{args.cancer_type.replace(' ', '_')}_{args.ppi}.csv", index_col=0)
-    crispr_neurobl_int = crispr_neurobl.copy(deep=True)
-    crispr_neurobl_int.index = [cell2int[i] for i in crispr_neurobl.index]
-    crispr_neurobl_int.columns = [gene2int[i] for i in crispr_neurobl.columns]
-    crispr_neurobl_int = crispr_neurobl_int.loc[:, dep_genes] # only keep the genes that have a dependency edge
-
+    crispr_neurobl = pd.read_csv(BASE_PATH+"Depmap/CRISPRGeneEffect.csv", index_col=0)
+    crispr_neurobl.columns = [col.split(' (')[0] for col in crispr_neurobl.columns]
+    cells_in_hetero = set(heterodata_obj['cell'].names)
+    genes_in_hetero = set(heterodata_obj['gene'].names)
+    
+    # Compute the intersections between the CSV and the heterodata object:
+    valid_cells = set(crispr_neurobl.index) & cells_in_hetero
+    valid_genes = set(crispr_neurobl.columns) & genes_in_hetero
+    
+    # Print the number of common cells and genes for verification:
+    print("Number of common cells:", len(valid_cells))
+    print("Number of common genes:", len(valid_genes))
+    
+    # Filter the DataFrame so that it contains only these common cells and genes.
+    filtered_crispr_df = crispr_neurobl.loc[list(valid_cells), list(valid_genes)]
+    
+    print(filtered_crispr_df.shape)
+    crispr_neurobl_int = filtered_crispr_df.copy(deep=True)
+    
+    # Fix: Use the filtered DataFrame's index and columns to ensure all items exist in the dictionaries
+    crispr_neurobl_int.index = [cell2int[i] for i in filtered_crispr_df.index]
+    crispr_neurobl_int.columns = [gene2int[i] for i in filtered_crispr_df.columns]
+    
+    # Further filter to only keep genes that have a dependency edge
+    common_dep_genes = list(set(dep_genes) & set(crispr_neurobl_int.columns))
+    crispr_neurobl_int = crispr_neurobl_int.loc[:, common_dep_genes]
     crispr_neurobl_bin = crispr_neurobl_int.applymap(lambda x: int(x < args.crp_pos)) # binarize crispr data
+    
     del heterodata_obj['gene'].names, heterodata_obj['cell'].names
 
 # with open(BASE_PATH+f"multigraphs/{args.cancer_type}_{args.ppi}{args.remove_rpl}_{args.useSTD}{args.remove_commonE}_crispr{str(args.crispr_threshold_pos).replace('.','_')}.pickle", 'rb') as handle:
@@ -182,7 +196,7 @@ if __name__=='__main__':
                                   dropout=args.dropout,
                                   act_fn=torch.nn.ReLU,
                                   lp_model=args.lp_model,
-                                  #add_self_loops=False, #DIT MOET JE WEL TOEVOEGEN!!!?
+                                  #add_self_loops=False, #DIT MOET JE WEL TOEVOEGEN!!!
                                   features_dim=features_dim,
                                   aggregate=args.aggregate,
                                   return_attention_weights=False)
@@ -217,7 +231,7 @@ if __name__=='__main__':
     # Split graph in train/validation
     transform_traintest = T.RandomLinkSplit(num_val=args.val_ratio,
                                             num_test=args.test_ratio,
-                                            disjoint_train_ratio=args.disjoint_train_ratio,
+                                            disjoint_train_ratio=args.disjoint_train_ratio,  # ?? 
                                             neg_sampling_ratio=args.npr, #if npr 3 this means that for each positive edge 3 negative edges are sampled
                                             add_negative_train_samples=args.train_neg_sampling,
                                             edge_types=('gene', 'dependency_of', 'cell'),
@@ -236,7 +250,7 @@ if __name__=='__main__':
                                             batch_size=args.batch_size, # how many pos per batch -> actual batch_size is (npr+1)*batch_size
                                             directed=True, # undirected het graphs not yet supported -> that is why the reverse type is added
                                             shuffle=True,
-                                            num_workers=10)
+                                            num_workers=1)
     else:
         train_loader = LinkNeighborLoader(data=train_data,
                                         num_neighbors={et: [-1]*2 for et in heterodata_obj.edge_types}, 
@@ -247,7 +261,7 @@ if __name__=='__main__':
                                             batch_size=args.batch_size, # how many pos per batch -> actual batch_size is (npr+1)*batch_size
                                             directed=True, # undirected het graphs not yet supported -> that is why the reverse type is added
                                             shuffle=True,
-                                            num_workers=10)
+                                            num_workers=1)
 
     # val_loader = LinkNeighborLoader(data=val_data,
     #                                 num_neighbors={et: [-1]*2 for et in heterodata_obj.edge_types},
@@ -272,7 +286,7 @@ if __name__=='__main__':
             else:
                 out = hetGNNmodel(sampled_data, edge_type_label="gene,dependency_of,cell")
             ground_truth = sampled_data["gene", "dependency_of", "cell"].edge_label
-            loss = loss_fn(out, ground_truth) 
+            loss = loss_fn(out, ground_truth) # BCEWithLogitLoss combines sigmoid and BCELoss in one function
             total_train_loss += loss
             loss.backward()
             optimizer.step()
@@ -425,9 +439,9 @@ if __name__=='__main__':
     output_dir = BASE_PATH + 'NB_results/file/'
     os.makedirs(output_dir, exist_ok=True)
     gene_embs_df.to_csv(BASE_PATH+f"NB_results/file/"\
-                        f"{args.cancer_type.replace(' ', '_')}_{args.ppi}{args.remove_rpl}_{args.useSTD}{args.remove_commonE}_crispr{str(args.crp_pos).replace('.','_')}_HetGNN_gene_embs{args.drugs}_{args.gene_feat}_{args.cell_feat}_{args.seed}.csv")
+                        f"{args.cancer_type.replace(' ', '_') if args.cancer_type else 'All'}_{args.ppi}{args.remove_rpl}_{args.useSTD}{args.remove_commonE}_crispr{str(args.crp_pos).replace('.','_')}_HetGNN_gene_embs{args.drugs}_{args.gene_feat}_{args.cell_feat}_{args.seed}.csv")
     cell_embs_df.to_csv(BASE_PATH+f"NB_results/file/"\
-                        f"{args.cancer_type.replace(' ', '_')}_{args.ppi}{args.remove_rpl}_{args.useSTD}{args.remove_commonE}_crispr{str(args.crp_pos).replace('.','_')}_HetGNN_cell_embs{args.drugs}_{args.gene_feat}_{args.cell_feat}_{args.seed}.csv")
+                        f"{args.cancer_type.replace(' ', '_') if args.cancer_type else 'All'}_{args.ppi}{args.remove_rpl}_{args.useSTD}{args.remove_commonE}_crispr{str(args.crp_pos).replace('.','_')}_HetGNN_cell_embs{args.drugs}_{args.gene_feat}_{args.cell_feat}_{args.seed}.csv")
 
     if args.drugs:
         drug_embs_df = pd.DataFrame(data=embs['drug'].cpu().detach().numpy(), index=drugs)
@@ -440,7 +454,7 @@ if __name__=='__main__':
                                                     columns=heterodata_obj['gene'].node_id.numpy())
 
         tot_pred_deps.to_csv(BASE_PATH+f"NB_results/file/"\
-                            f"{args.cancer_type.replace(' ', '_')}_{args.ppi}{args.remove_rpl}_{args.useSTD}{args.remove_commonE}_crispr{str(args.crp_pos).replace('.','_')}_HetGNN{args.drugs}_{args.gene_feat}_{args.cell_feat}_{args.seed}.csv")
+                            f"{args.cancer_type.replace(' ', '_') if args.cancer_type else 'All'}_{args.ppi}{args.remove_rpl}_{args.useSTD}{args.remove_commonE}_crispr{str(args.crp_pos).replace('.','_')}_HetGNN{args.drugs}_{args.gene_feat}_{args.cell_feat}_{args.seed}.csv")
         
 
     if args.plot_cell_embeddings:
@@ -466,7 +480,7 @@ if __name__=='__main__':
             alpha=0.8,
             ax=ax
         )
-        plt.title(f"{args.cancer_type} clustering after {epoch} epochs")
+        plt.title(f"{args.cancer_type.replace(' ', '_') if args.cancer_type else 'All'} clustering after {epoch} epochs")
         plt.show()
         # Ensure the directory exists
         output_dir = BASE_PATH + "Figures/"
