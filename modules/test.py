@@ -159,11 +159,11 @@ def save_results(
         plot_cell_embeddings: Whether to plot cell embeddings
     """
     # Extract parameters from config
-    data_params = config['data']
-    cancer_type = data_params.get("cancer_type", "All").replace(' ', '_')
-    ppi = data_params.get("ppi", "Reactome")
-    gene_feat = data_params.get("gene_feat_name", "cgp")
-    cell_feat = data_params.get("cell_feat_name", "cnv")
+    graph_params = config['graph_parameters']
+    cancer_type = graph_params.get("cancer_type", "All").replace(' ', '_')
+    ppi = graph_params.get("ppi", "Reactome")
+    gene_feat = graph_params.get("gene_feat_name", "cgp")
+    cell_feat = graph_params.get("cell_feat_name", "cnv")
     
     # Create output directories
     file_output_dir = os.path.join(output_path, 'file')
@@ -201,9 +201,9 @@ def save_results(
             dfs["cell_embeddings"],
             cells=dfs["cell_embeddings"].index,
             output_dir=figure_output_dir,
-            base_path=data_params.get("base_path", "./Data/"),
+            base_path=graph_params.get("base_path", "./Data/"),
             cancer_type=cancer_type,
-            epoch=config.get("model", {}).get("epochs", 30)
+            epoch=config.get("model_parameters", {}).get("epochs", 30)
         )
 
 def plot_embeddings(

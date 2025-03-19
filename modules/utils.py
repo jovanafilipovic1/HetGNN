@@ -76,7 +76,7 @@ def process_data_and_create_mappings(
     dep_genes = list(set(heterodata_obj['gene', 'dependency_of', 'cell'].edge_index[0].numpy()))
     
     # Load and process CRISPR data
-    crispr_neurobl = pd.read_csv(os.path.join(base_path, "Depmap/CRISPRGeneEffect.csv"), index_col=0)
+    crispr_neurobl = pd.read_csv(os.path.join(base_path, "Depmap/CRISPRGeneDependency.csv"), index_col=0)
     crispr_neurobl.columns = [col.split(' (')[0] for col in crispr_neurobl.columns]
     
     # Find intersection between CRISPR data and heterodata
@@ -99,7 +99,7 @@ def process_data_and_create_mappings(
     crispr_neurobl_continuous = crispr_neurobl_continuous.loc[:, common_dep_genes]
     
     # Binarize CRISPR data
-    crp_pos = config.get('crp_pos', -1.5)
+    crp_pos = config.get('graph_parameters', {}).get('crp_pos', -1.5)
     crispr_neurobl_bin = crispr_neurobl_continuous.applymap(lambda x: int(x < crp_pos))
     
     # Delete names attributes from heterodata object
