@@ -10,34 +10,22 @@ import torch_geometric.transforms as T
 from models.HetGNN_Model_Jovana import HeteroData_GNNmodel
 from modules.validation import validate_model, evaluate_full_predictions
 
-def prepare_model(
-    heterodata_obj: HeteroData,
-    config: Dict[str, Any],
-    device: str
-) -> HeteroData_GNNmodel:
+def parse_model_parameters(
+    model_params: Dict[str, Any],
+    node_types: List[str],
+    features_dim: Dict[str, int]
+) -> Dict[str, Any]:
     """
-    Prepare the HetGNN model.
+    Parse model parameters from the configuration.
     
     Args:
-        heterodata_obj: The heterogeneous graph data object
-        config: Configuration dictionary containing model parameters
-        device: Device to place the model on
+        model_params: Model parameters from configuration
+        node_types: List of node types
+        features_dim: Dictionary of feature dimensions for each node type
         
     Returns:
-        Initialized HetGNN model
+        Dictionary of parsed parameters for model creation
     """
-    # Extract parameters from config
-    model_params = config['model']
-    
-    # Define node types
-    node_types = ['gene', 'cell']
-    
-    # Define feature dimensions for each node type
-    features_dim = {
-        'gene': heterodata_obj['gene'].x.shape[1],
-        'cell': heterodata_obj['cell'].x.shape[1]
-    }
-    
     # Parse hidden features
     hidden_features_str = model_params.get("hidden_features", "-1,256,128")
     hidden_features = [int(x) if x != '-1' else -1 for x in hidden_features_str.split(',')]
@@ -58,19 +46,60 @@ def prepare_model(
     else:
         emb_dim = int(emb_dim)
     
+    return {
+        "embedding_dim": emb_dim,
+        "features": hidden_features,
+        "heads": heads,
+        "dropout": model_params.get("dropout", 0.2),
+        "lp_model": model_params.get("lp_model", "simple"),
+        "features_dim": features_dim,
+        "aggregate": model_params.get("aggregate", "mean"),
+    }
+
+def prepare_model(
+    heterodata_obj: HeteroData,
+    config: Dict[str, Any],
+    device: str
+) -> HeteroData_GNNmodel:
+    """
+    Prepare the HetGNN model.
+    
+    Args:
+        heterodata_obj: The heterogeneous graph data object
+        config: Configuration dictionary containing model parameters
+        device: Device to place the model on
+        
+    Returns:
+        Initialized HetGNN model
+    """
+    # Extract parameters from config
+    model_params = config['model_parameters']
+    
+    # Define node types
+    node_types = ['gene', 'cell']
+    
+    # Define feature dimensions for each node type
+    features_dim = {
+        'gene': heterodata_obj['gene'].x.shape[1],
+        'cell': heterodata_obj['cell'].x.shape[1]
+    }
+    
+    # Parse model parameters
+    parsed_params = parse_model_parameters(model_params, node_types, features_dim)
+    
     # Create the model
     model = HeteroData_GNNmodel(
         heterodata=heterodata_obj,
         node_types=node_types,
         node_types_to_pred=node_types,
-        embedding_dim=emb_dim,
-        features=hidden_features,
-        heads=heads,
-        dropout=model_params.get("dropout", 0.2),
+        embedding_dim=parsed_params["embedding_dim"],
+        features=parsed_params["features"],
+        heads=parsed_params["heads"],
+        dropout=parsed_params["dropout"],
         act_fn=torch.nn.ReLU,
-        lp_model=model_params.get("lp_model", "simple"),
-        features_dim=features_dim,
-        aggregate=model_params.get("aggregate", "mean"),
+        lp_model=parsed_params["lp_model"],
+        features_dim=parsed_params["features_dim"],
+        aggregate=parsed_params["aggregate"],
         return_attention_weights=False
     )
     
@@ -83,8 +112,6 @@ def prepare_data_for_training(
     val_ratio: float,
     test_ratio: float,
     disjoint_train_ratio: float,
-    npr: float,
-    train_neg_sampling: bool,
     batch_size: int
 ) -> Tuple[HeteroData, HeteroData, HeteroData, LinkNeighborLoader]:
     """
@@ -94,9 +121,7 @@ def prepare_data_for_training(
         heterodata_obj: The heterogeneous graph data object
         val_ratio: Validation ratio
         test_ratio: Test ratio
-        disjoint_train_ratio: Disjoint train ratio
-        npr: Negative sampling ratio
-        train_neg_sampling: Whether to sample negatives before training
+        disjoint_train_ratio: Ratio of disjoint training edges
         batch_size: Batch size for training
         
     Returns:
@@ -107,8 +132,8 @@ def prepare_data_for_training(
         num_val=val_ratio,
         num_test=test_ratio,
         disjoint_train_ratio=disjoint_train_ratio,
-        neg_sampling_ratio=npr,
-        add_negative_train_samples=train_neg_sampling,
+        neg_sampling_ratio=0.0,  # No random negative sampling
+        add_negative_train_samples=False,  # Don't add random negative samples
         edge_types=('gene', 'dependency_of', 'cell'),
         rev_edge_types=('cell', 'rev_dependency_of', 'gene'),
         is_undirected=True
@@ -116,36 +141,20 @@ def prepare_data_for_training(
 
     train_data, val_data, test_data = transform_traintest(heterodata_obj)
     
-    # Define the loaders
-    if train_neg_sampling:
-        train_loader = LinkNeighborLoader(
-            data=train_data,
-            num_neighbors={et: [-1]*2 for et in heterodata_obj.edge_types}, 
-            edge_label_index=(
-                ("gene", "dependency_of", "cell"),
-                train_data["gene", "dependency_of", "cell"].edge_label_index
-            ),
-            edge_label=train_data["gene", "dependency_of", "cell"].edge_label,
-            batch_size=batch_size,
-            directed=True,
-            shuffle=True,
-            num_workers=1
-        )
-    else:
-        train_loader = LinkNeighborLoader(
-            data=train_data,
-            num_neighbors={et: [-1]*2 for et in heterodata_obj.edge_types}, 
-            neg_sampling_ratio=npr,
-            edge_label_index=(
-                ("gene", "dependency_of", "cell"),
-                train_data["gene", "dependency_of", "cell"].edge_label_index
-            ),
-            edge_label=train_data["gene", "dependency_of", "cell"].edge_label,
-            batch_size=batch_size,
-            directed=True,
-            shuffle=True,
-            num_workers=1
-        )
+    # Create the loader using the existing edge labels, without random negative sampling
+    train_loader = LinkNeighborLoader(
+        data=train_data,
+        num_neighbors={et: [-1]*2 for et in heterodata_obj.edge_types}, 
+        edge_label_index=(
+            ("gene", "dependency_of", "cell"),
+            train_data["gene", "dependency_of", "cell"].edge_label_index
+        ),
+        edge_label=train_data["gene", "dependency_of", "cell"].edge_label,
+        batch_size=batch_size,
+        directed=True,
+        shuffle=True,
+        num_workers=1
+    )
     
     return train_data, val_data, test_data, train_loader
 
@@ -212,9 +221,9 @@ def train_model(
         Tuple of (model path, results dictionary)
     """
     # Extract parameters from config
-    data_params = config['data']
-    model_params = config['model']
-    training_params = config['training']
+    graph_params = config['graph_parameters']
+    model_params = config['model_parameters']
+    training_params = config['training_parameters']
     
     # Prepare data for training
     train_data, val_data, test_data, train_loader = prepare_data_for_training(
@@ -222,37 +231,10 @@ def train_model(
         val_ratio=training_params.get("validation_ratio", 0.1),
         test_ratio=training_params.get("test_ratio", 0.2),
         disjoint_train_ratio=training_params.get("disjoint_train_ratio", 0.0),
-        npr=training_params.get("negative_sampling_ratio", 3.0),
-        train_neg_sampling=training_params.get("train_neg_sampling", True),
         batch_size=training_params.get("batch_size", 128)
     )
     
-    # Define node types and feature dimensions
-    node_types = ['gene', 'cell']
-    features_dim = {
-        'gene': heterodata_obj['gene'].x.shape[1],
-        'cell': heterodata_obj['cell'].x.shape[1]
-    }
-    
-    # Parse embedding dimensions
-    emb_dim = str(model_params.get("emb_dim", 512))
-    if ',' in emb_dim:
-        emb_dims = emb_dim.split(',')
-        emb_dim = {nt: int(ed) for nt, ed in zip(node_types, emb_dims)}
-    else:
-        emb_dim = int(emb_dim)
-    
-    # Parse hidden features
-    hidden_features_str = model_params.get("hidden_features", "-1,256,128")
-    hidden_features = [int(i) for i in hidden_features_str.split(',')]
-    if hidden_features[0] == -1:
-        hidden_features[0] = (-1, -1)
-    
-    # Parse heads
-    heads_str = model_params.get("heads", "1,1")
-    heads = [int(i) for i in heads_str.split(',')]
-    
-    # Create the model
+    # Create the model using prepare_model to avoid parameter parsing duplication
     hetGNNmodel = prepare_model(
         heterodata_obj=heterodata_obj,
         config=config,
@@ -349,10 +331,10 @@ def train_model(
     
     # Save the model
     os.makedirs(os.path.join(output_path, 'model'), exist_ok=True)
-    cancer_type = data_params.get("cancer_type", "All").replace(' ', '_')
-    gene_feat = data_params.get("gene_feat_name", "cgp")
-    cell_feat = data_params.get("cell_feat_name", "cnv")
-    seed = config.get("seed", 42)
+    cancer_type = graph_params.get("cancer_type", "All").replace(' ', '_')
+    gene_feat = graph_params.get("gene_feat_name", "cgp")
+    cell_feat = graph_params.get("cell_feat_name", "cnv")
+    seed = config.get("settings", {}).get("seed", 42)
     
     model_path = os.path.join(
         output_path, 

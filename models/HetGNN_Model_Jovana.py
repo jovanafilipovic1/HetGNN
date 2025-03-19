@@ -1,15 +1,11 @@
 import os
-
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-
-
 import torch_geometric
 import torch_geometric.data as geom_data
 import torch_geometric.nn as geom_nn
 from typing import Optional
-
 from torch import Tensor
 from itertools import chain
 from collections import OrderedDict
@@ -56,15 +52,13 @@ class HeteroData_GNNmodel(nn.Module):
         else:
             TypeError,"Use correct embedding dim type"
 
-        self.conv1 = HeteroConv({('gene', 'interacts_with', 'gene'): GATv2Conv(-1,256),
-                                       ('gene', 'rev_interacts_with', 'gene'): GATv2Conv(-1,256),
-                                       ('gene', 'metapath_0', 'gene'): GATv2Conv(-1,256),
+        self.conv1 = HeteroConv({('gene', 'interacts_with', 'gene'): GCNConv(-1,256),
+                                       ('gene', 'rev_interacts_with', 'gene'): GCNConv(-1,256),
                                        ('cell', 'metapath_1', 'cell'): GCNConv(-1,256)
                                         }, aggr='sum')
         
-        self.conv2 = HeteroConv({('gene', 'interacts_with', 'gene'): GATv2Conv(-1,128),
-                                       ('gene', 'rev_interacts_with', 'gene'): GATv2Conv(-1,128),
-                                       ('gene', 'metapath_0', 'gene'): GATv2Conv(-1,128),
+        self.conv2 = HeteroConv({('gene', 'interacts_with', 'gene'): GCNConv(-1,128),
+                                       ('gene', 'rev_interacts_with', 'gene'): GCNConv(-1,128),
                                        ('cell', 'metapath_1', 'cell'): GCNConv(-1,128)
                                         }, aggr='sum')
         self.act_fn = act_fn()

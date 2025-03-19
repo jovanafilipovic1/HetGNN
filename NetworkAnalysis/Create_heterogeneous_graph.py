@@ -30,7 +30,7 @@ class Create_heterogeneous_graph:
         std_threshold (float): Threshold for standard deviation filtering 
     """
     
-    def __init__(self, BASE_PATH: str, cell_feature: str, gene_feature: str, cancer_type: str = None, metapaths: Optional[List[List[Tuple[str, str, str]]]] = None):
+    def __init__(self, BASE_PATH: str, cell_feature: str, gene_feature: str, cancer_type: str = None, metapaths: Optional[List[str]] = None):
         """
         Initialize the Create_heterogeneous_graph class.
         
@@ -39,15 +39,15 @@ class Create_heterogeneous_graph:
             cell_feature (str): Type of cell line feature to use (e.g., "cnv", "expression")
             gene_feature (str): Type of gene feature to use (e.g., "cgp", "bp")
             cancer_type (str, optional): Type of cancer to filter cell lines by
-            metapaths (List[List[Tuple[str, str, str]]], optional): List of metapaths to add to the graph
+            metapaths (List[str], optional): List of metapaths to add to the graph
         """
         self.BASE_PATH = BASE_PATH
         self.cancer_type = cancer_type
         self.cell_feature = cell_feature
         self.gene_feature = gene_feature
         self.metapaths = metapaths
-        self.crispr_threshold_pos = -1.5
-        self.crispr_threshold_neg = -0.5
+        self.crispr_threshold_pos = 0.8
+        self.crispr_threshold_neg = 0.2
         self.std_threshold = 0.2
 
     def load_data(self) -> Tuple[pd.DataFrame, pd.DataFrame, UndirectedInteractionNetwork]:
@@ -64,7 +64,7 @@ class Create_heterogeneous_graph:
         ccles = pd.read_csv(self.BASE_PATH + "Depmap/Model.csv", index_col=0)
         
         # Load CRISPR gene effect data
-        crispr_effect = pd.read_csv(self.BASE_PATH + 'Depmap/CRISPRGeneEffect.csv', header=0, index_col=0)
+        crispr_effect = pd.read_csv(self.BASE_PATH + 'Depmap/CRISPRGeneDependency.csv', header=0, index_col=0)
         crispr_effect.columns = [i.split(' ')[0] for i in crispr_effect.columns]  # Extract gene names
         
         # Load protein-protein interaction network
@@ -144,26 +144,32 @@ class Create_heterogeneous_graph:
 
     def create_dependency_network(self, crispr_effect: pd.DataFrame, informative_genes: List[str]) -> pd.DataFrame:
         """
-        Create a dependency network from CRISPR data using only informative genes. Low scores are considered as dependencies.
+        Create a dependency network from CRISPR data using only informative genes.
+        Create an edge list with labels (1 for dependency, 0 for non-dependency).
         
         Args:
             crispr_effect (pd.DataFrame): CRISPR gene dependency scores
             informative_genes (List[str]): List of informative genes to consider for dependencies
             
         Returns:
-            pd.DataFrame: Dependency edge list with columns ['gene', 'cell']
+            pd.DataFrame: Dependency edge list with columns ['gene', 'cell', 'label']
         """
         dependency_edges = []
         
         for cell, row_genes in crispr_effect.iterrows():
             tmp = row_genes[informative_genes]
-            tmp_pos = list(tmp[tmp < self.crispr_threshold_pos].index)
-            # Create edges with consistent [gene, cell] ordering
-            for gene in tmp_pos:
-                dependency_edges.append([gene, cell])
+            
+            # Add all edges with their corresponding labels
+            for gene, score in tmp.items():
+                if score > self.crispr_threshold_pos: # dependency
+                    label = 1 
+                    dependency_edges.append([gene, cell, label])
+                elif score < self.crispr_threshold_neg: # non-dependency
+                    label = 0   
+                    dependency_edges.append([gene, cell, label])
         
-        # Create dataframe
-        dependency_df = pd.DataFrame(dependency_edges, columns=['gene', 'cell'])
+        # Create dataframe with gene, cell, and label columns
+        dependency_df = pd.DataFrame(dependency_edges, columns=['gene', 'cell', 'label'])
         
         return dependency_df
 
@@ -398,7 +404,7 @@ class Create_heterogeneous_graph:
         Returns:
             HeteroData: The HeteroData object with added metapaths
         """
-        if self.metapaths is None:
+        if self.metapaths is None or len(self.metapaths) == 0:
             return data
             
         # Make all edge indices contiguous before adding metapaths
@@ -476,15 +482,15 @@ class Create_heterogeneous_graph:
         informative_genes = self.filter_informative_genes(filtered_crispr)
         
         print("Creating dependency network using informative genes...")
-        dependency_edgelist = self.create_dependency_network(filtered_crispr, informative_genes)
+        dependency_df = self.create_dependency_network(filtered_crispr, informative_genes)
         
         print("Processing gene features...")
         ppi_edges = ppi_obj.getInteractionNamed() #function defined in multigraph.py
         ppi_genes = set(ppi_edges.Gene_A) | set(ppi_edges.Gene_B)
         ppi_genes = ppi_genes & set(initial_focus_genes)  # Intersect with initial focus genes
         
-        dependency_genes = set(dependency_edgelist['gene'])
-        
+        dependency_genes = set(dependency_df['gene'])
+
         # Combine genes from both sources
         genes_in_network = sorted(list(ppi_genes | dependency_genes))
         
@@ -493,7 +499,7 @@ class Create_heterogeneous_graph:
         
         print("Processing cell features...")
         # Only process features for cells in the dependency network
-        cells_in_network = sorted(list(set(dependency_edgelist['cell'])))
+        cells_in_network = sorted(list(set(dependency_df['cell'])))
         cell_feat, cell2int, cells_with_features = self.process_cell_features(cells_in_network)
         
         # Final set of genes and cells to include in the graph (those with features)
@@ -512,9 +518,9 @@ class Create_heterogeneous_graph:
         ]
         
         # Filter dependency edges to include only genes and cells with features
-        dependency_edgelist = dependency_edgelist[
-            dependency_edgelist['gene'].isin(final_genes) & 
-            dependency_edgelist['cell'].isin(final_cells)
+        dependency_df = dependency_df[
+            dependency_df['gene'].isin(final_genes) & 
+            dependency_df['cell'].isin(final_cells)
         ]
         
         # Convert edge lists to tensors with explicit dtype and ensure contiguity
@@ -523,10 +529,15 @@ class Create_heterogeneous_graph:
             for _, row in ppi_edges.iterrows()
         ], dtype=torch.long).t().contiguous()
         
-        dep_edge_index = torch.tensor([
-            [gene2int[row.gene], cell2int[row.cell]] 
-            for _, row in dependency_edgelist.iterrows()
+        # Create separate tensors for all dependency edges and their labels
+        all_dep_indices = dependency_df[['gene', 'cell']].values
+        all_dep_edge_index = torch.tensor([
+            [gene2int[gene], cell2int[cell]] 
+            for gene, cell in all_dep_indices
         ], dtype=torch.long).t().contiguous()
+        
+        # Create edge labels tensor (1 for dependency, 0 for non-dependency)
+        edge_label = torch.tensor(dependency_df['label'].values, dtype=torch.float)
         
         # Create PyTorch Geometric HeteroData object
         data = HeteroData()
@@ -543,7 +554,8 @@ class Create_heterogeneous_graph:
         
         # Add edge indices
         data['gene', 'interacts_with', 'gene'].edge_index = ppi_edge_index
-        data['gene', 'dependency_of', 'cell'].edge_index = dep_edge_index
+        data['gene', 'dependency_of', 'cell'].edge_index = all_dep_edge_index
+        data['gene', 'dependency_of', 'cell'].edge_label = edge_label
         
         # Validate edges before converting to undirected
         self.validate_edges(data, gene2int, cell2int)
@@ -555,6 +567,8 @@ class Create_heterogeneous_graph:
         for edge_type in data.edge_types:
             if hasattr(data[edge_type], 'edge_index'):
                 data[edge_type].edge_index = data[edge_type].edge_index.contiguous()
+            if hasattr(data[edge_type], 'edge_label'):
+                data[edge_type].edge_label = data[edge_type].edge_label.contiguous()
         
         # Validate edges after undirected conversion
         self.validate_edges(data, gene2int, cell2int)
