@@ -28,8 +28,14 @@ class GCNsimple(nn.Module):
     def __init__(self, hidden_channels: list, layer_name:str, aggregate:str, **kwargs) -> None:
         super().__init__()
         gnnlayer = gnn_factory[layer_name]
-        self.gnn1 = gnnlayer(in_channels=hidden_channels[0], out_channels=hidden_channels[1], aggr = aggregate)
-        self.gnn2 = gnnlayer(in_channels=hidden_channels[1], out_channels=hidden_channels[2], aggr = aggregate)
+        
+        # Add add_self_loops=False only for layers that support it (GCN, GAT)
+        layer_kwargs = {'aggr': aggregate}
+        if layer_name in ['GCN', 'GAT', 'GATv2']:
+            layer_kwargs['add_self_loops'] = False
+            
+        self.gnn1 = gnnlayer(in_channels=hidden_channels[0], out_channels=hidden_channels[1], **layer_kwargs)
+        self.gnn2 = gnnlayer(in_channels=hidden_channels[1], out_channels=hidden_channels[2], **layer_kwargs)
         # self.gnn3 = gnnlayer(in_channels=hidden_channels[2], out_channels=hidden_channels[3], aggr = aggregate, **kwargs)
 
 
@@ -53,8 +59,13 @@ class GATsimple(nn.Module):
         super().__init__()
 
         gnnlayer = gnn_factory[layer_name]
-        self.gnn1 = gnnlayer(in_channels=hidden_channels[0], out_channels=hidden_channels[1], add_self_loops=False)
-        self.gnn2 = gnnlayer(in_channels=hidden_channels[1], out_channels=hidden_channels[2], add_self_loops=False)
+        # Add add_self_loops=False only for layers that support it
+        layer_kwargs = {}
+        if layer_name in ['GCN', 'GAT', 'GATv2']:
+            layer_kwargs['add_self_loops'] = False
+            
+        self.gnn1 = gnnlayer(in_channels=hidden_channels[0], out_channels=hidden_channels[1], **layer_kwargs)
+        self.gnn2 = gnnlayer(in_channels=hidden_channels[1], out_channels=hidden_channels[2], **layer_kwargs)
 
     def forward(self, x: Tensor, edge_index: Tensor) -> Tensor:
 
@@ -138,7 +149,7 @@ class LPdeep_classif(nn.Module):
 
         return self.lin_layers(edge_)  #returns vector with the score/probability of each edge
 
-class HeteroData_GNNmodel(nn.Module):
+class HeteroData_GNNmodel_Jihwan(nn.Module):
     def __init__(self, heterodata: HeteroData, node_types: list, node_types_to_pred: list, embedding_dim, features_dim: dict,
                  gcn_model: str, features: list, layer_name: str='sageconv', heads: list=None,
                  dropout: float=0.2, act_fn: torch.nn.modules.activation=torch.nn.ReLU, lp_model: str='simple',

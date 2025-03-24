@@ -1,29 +1,47 @@
-# HetGNN: Heterogeneous Graph Neural Network Cancer Cell Depndency prediction
+# Heterogeneous Graph Neural Network for Cancer Cell Dependency prediction
 
-This repository contains code for training and evaluating a heterogeneous graph neural network (HetGNN) that predicts dependencies between genes and cancer cell lines.
+This repository contains code for training and evaluating a heterogeneous graph neural network that predicts dependencies between genes and cancer cell lines.
 
 ## Repository Structure
 
 - `Main.py`: The main entry point that loads configuration, initializes the graph, and runs the training and testing pipeline.
+- `NetworkAnalysis/Create_heterogeneous_graph.py`: Contains class for the creation of heterogeneous graph data object.
 - `modules/train.py`: Contains functions for model training and preparation.
 - `modules/validation.py`: Contains functions for model validation during training.
 - `modules/test.py`: Contains functions for model testing, prediction, and visualization.
-- `modules/utils.py`: Contains utility functions used by multiple modules, including data processing and matrix construction.
+- `modules/utils.py`: Contains utility functions used for training and testing.
 - `config/parameters.json`: Configuration file with all parameters for the model and training.
-- `models/`: Directory containing models
-- `NetworkAnalysis/Create_heterogeneous_graph.py`: Contains class for the creation of heterogeneous graph data object.
-- `Data/`: Directory containing data files (CRISPR data, cell features, gene features, etc.).
-- `runPython.sh`: script for running the model on HPC
+- `models/`: Directory containing models.
+- `runPython.sh`: Script for running the model on HPC.
+- `MOSA`: Directory for creating cell line embeddings.
 
 ## Usage
 
 To run the model:
 
 ```bash
-python Main.py
+python Main.py --config ./config/parameters.json'
 ```
 
-This will use the configuration in `config/parameters.json` to train, validate, and test the model.
+This will use the configuration in `config/parameters.json` to call or create the graph data object, train, validate, and test the GNN.
+
+## Data sources
+
+### CRISPR data and cell features: [DepMap](https://depmap.org/portal/data_page/?tab=allData)
+
+- Common essential genes: AchillesCommonEssentialControls.csv
+- Gene dependency probabilities: CRISPRGeneDependency.csv
+- Cell line metadata: Model.csv
+- CNV: OmicsCNGene.csv
+- Expression: OmicsExpressionProteinCodingGenesTPMLogp1.csv
+- Mutations: OmicsSomaticMutationsMatrixDamaging.csv
+
+### Gene features: [Human MsigDB Collections](https://www.gsea-msigdb.org/gsea/msigdb/human/collections.jsp)
+- C2: [chemical and genetic perturbations](https://www.gsea-msigdb.org/gsea/msigdb/download_file.jsp?filePath=/msigdb/release/2024.1.Hs/c2.cgp.v2024.1.Hs.symbols.gmt) (cgp)
+- C4: [computational gene sets defined by mining large collections of cancer-oriented expression data](https://www.gsea-msigdb.org/gsea/msigdb/download_file.jsp?filePath=/msigdb/release/2024.1.Hs/c4.all.v2024.1.Hs.symbols.gmt)
+
+### Protein-protein interaction network
+[Reactome3.txt](https://reactome.org/download/tools/ReatomeFIs/FIsInGene_070323_with_annotations.txt.zip)
 
 ## Configuration
 
@@ -48,7 +66,7 @@ All parameters are defined in `config/parameters.json`. Here's what each section
 - `hidden_features`: Hidden layer dimensions as comma-separated string (e.g., "-1,256,128")
 - `dropout`: Dropout rate
 - `lr`: Learning rate
-- `epochs`: Number of training epochs
+- `max_epochs`: Maximum number of training epochs (early stopping will occur if validation loss doesn't improve for 12 consecutive epochs)
 - `emb_dim`: Embedding dimension
 - `heads`: Number of attention heads for each layer as comma-separated string (e.g., "1,1")
 - `lp_model`: Link prediction model type (e.g., "simple")

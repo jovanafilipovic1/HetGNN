@@ -7,7 +7,8 @@ from copy import deepcopy
 from torch_geometric.data import HeteroData
 from torch_geometric.loader.link_neighbor_loader import LinkNeighborLoader
 import torch_geometric.transforms as T
-from models.HetGNN_Model_Jovana import HeteroData_GNNmodel
+from models.HetGNN_Model_Jovana import HeteroData_GNNmodel_Jovana
+from models.model_Jihwan import HeteroData_GNNmodel_Jihwan
 from modules.validation import validate_model, evaluate_full_predictions
 
 def parse_model_parameters(
@@ -28,10 +29,21 @@ def parse_model_parameters(
     """
     # Parse hidden features
     hidden_features_str = model_params.get("hidden_features", "-1,256,128")
-    hidden_features = [int(x) if x != '-1' else -1 for x in hidden_features_str.split(',')]
+    hidden_features = []
     
-    # Handle the special case for features[0]
-    if hidden_features[0] == -1:
+    # Process each value in the hidden_features string
+    for x in hidden_features_str.split(','):
+        if x == '-1':
+            # For Jihwan's model, -1 should remain as -1, not converted to tuple
+            if model_params.get("model_name", "HetGNN_Model_Jovana") == "HetGNN_Model_Jihwan":
+                hidden_features.append(-1)
+            else:
+                hidden_features.append(-1)  # Will be processed to tuple later if needed
+        else:
+            hidden_features.append(int(x))
+    
+    # Handle the special case for features[0] for Jovana's model only
+    if model_params.get("model_name", "HetGNN_Model_Jovana") == "HetGNN_Model_Jovana" and hidden_features[0] == -1:
         hidden_features[0] = (-1, -1)
     
     # Parse heads
@@ -54,13 +66,13 @@ def parse_model_parameters(
         "lp_model": model_params.get("lp_model", "simple"),
         "features_dim": features_dim,
         "aggregate": model_params.get("aggregate", "mean"),
+        "cell_layer_type": model_params.get("cell_layer_type", "gnn")
     }
 
 def prepare_model(
     heterodata_obj: HeteroData,
     config: Dict[str, Any],
-    device: str
-) -> HeteroData_GNNmodel:
+    device: str ):
     """
     Prepare the HetGNN model.
     
@@ -87,22 +99,40 @@ def prepare_model(
     # Parse model parameters
     parsed_params = parse_model_parameters(model_params, node_types, features_dim)
     
-    # Create the model
-    model = HeteroData_GNNmodel(
-        heterodata=heterodata_obj,
-        node_types=node_types,
-        node_types_to_pred=node_types,
-        embedding_dim=parsed_params["embedding_dim"],
-        features=parsed_params["features"],
-        heads=parsed_params["heads"],
-        dropout=parsed_params["dropout"],
-        act_fn=torch.nn.ReLU,
-        lp_model=parsed_params["lp_model"],
-        features_dim=parsed_params["features_dim"],
-        aggregate=parsed_params["aggregate"],
-        return_attention_weights=False
-    )
+    if model_params.get("model_name", "HetGNN_Model_Jovana") == "HetGNN_Model_Jovana":
+        # Create the model
+        model = HeteroData_GNNmodel_Jovana(
+            heterodata=heterodata_obj,
+            node_types=node_types,
+            node_types_to_pred=node_types,
+            embedding_dim=parsed_params["embedding_dim"],
+            dropout=parsed_params["dropout"],
+            act_fn=torch.nn.ReLU,
+            lp_model=parsed_params["lp_model"],
+            features_dim=parsed_params["features_dim"],
+            aggregate=parsed_params["aggregate"],
+            heads=parsed_params["heads"],
+            cell_layer_type=parsed_params["cell_layer_type"]
+        )
     
+    elif model_params.get("model_name", "HetGNN_Model_Jovana") == "HetGNN_Model_Jihwan":
+        model = HeteroData_GNNmodel_Jihwan(
+            heterodata=heterodata_obj,
+            node_types=node_types,
+            node_types_to_pred=node_types,
+            embedding_dim=parsed_params["embedding_dim"],
+            gcn_model=model_params.get("gcn_model", "simple"),
+            features=parsed_params["features"],
+            layer_name=model_params.get("layer_name", "GCN"),
+            heads=parsed_params["heads"],
+            dropout=parsed_params["dropout"],
+            act_fn=torch.nn.ReLU,
+            lp_model=parsed_params["lp_model"],
+            features_dim=parsed_params["features_dim"],
+            aggregate=parsed_params["aggregate"],
+            return_attention_weights=model_params.get("return_attention_weights", False)
+        )
+        
     model.to(device)
     print(model)
     return model
@@ -112,7 +142,8 @@ def prepare_data_for_training(
     val_ratio: float,
     test_ratio: float,
     disjoint_train_ratio: float,
-    batch_size: int
+    batch_size: int,
+    num_neighbors: List[int] = [-1, -1]
 ) -> Tuple[HeteroData, HeteroData, HeteroData, LinkNeighborLoader]:
     """
     Prepare data for training by splitting and creating loaders.
@@ -123,6 +154,7 @@ def prepare_data_for_training(
         test_ratio: Test ratio
         disjoint_train_ratio: Ratio of disjoint training edges
         batch_size: Batch size for training
+        num_neighbors: Number of neighbors to sample per layer, default samples all neighbors
         
     Returns:
         Tuple of (train_data, val_data, test_data, train_loader)
@@ -136,7 +168,7 @@ def prepare_data_for_training(
         add_negative_train_samples=False,  # Don't add random negative samples
         edge_types=('gene', 'dependency_of', 'cell'),
         rev_edge_types=('cell', 'rev_dependency_of', 'gene'),
-        is_undirected=True
+        is_undirected=False
     )
 
     train_data, val_data, test_data = transform_traintest(heterodata_obj)
@@ -144,7 +176,7 @@ def prepare_data_for_training(
     # Create the loader using the existing edge labels, without random negative sampling
     train_loader = LinkNeighborLoader(
         data=train_data,
-        num_neighbors={et: [-1]*2 for et in heterodata_obj.edge_types}, 
+        num_neighbors={et: num_neighbors for et in heterodata_obj.edge_types}, 
         edge_label_index=(
             ("gene", "dependency_of", "cell"),
             train_data["gene", "dependency_of", "cell"].edge_label_index
@@ -195,7 +227,7 @@ def train_model(
     heterodata_obj: HeteroData,
     crispr_neurobl_continuous: pd.DataFrame,
     crispr_neurobl_bin: pd.DataFrame,
-    cls_int: torch.Tensor,
+    cls_int: List[int],
     dep_genes: List[int],
     cells: List[str],
     genes: List[str],
@@ -203,7 +235,13 @@ def train_model(
     output_path: str
 ) -> Tuple[str, Dict[str, Any]]:
     """
-    Train the HetGNN model.
+    Train the HetGNN model with early stopping based on validation loss.
+    
+    The training will stop when either:
+    1. The maximum number of epochs (100) is reached
+    2. The validation loss does not improve for 12 consecutive epochs
+    
+    The best model (based on validation AP score) will be saved.
     
     Args:
         config: Configuration dictionary
@@ -225,13 +263,23 @@ def train_model(
     model_params = config['model_parameters']
     training_params = config['training_parameters']
     
+    # Get num_neighbors parameter from config, handling both list and string formats
+    num_neighbors_param = training_params.get("num_neighbors", [-1, -1])
+    
+    # Handle case where num_neighbors is a string (like "40,40")
+    if isinstance(num_neighbors_param, str):
+        num_neighbors = [int(x) for x in num_neighbors_param.split(',')]
+    else:
+        num_neighbors = num_neighbors_param
+    
     # Prepare data for training
     train_data, val_data, test_data, train_loader = prepare_data_for_training(
         heterodata_obj=heterodata_obj,
         val_ratio=training_params.get("validation_ratio", 0.1),
         test_ratio=training_params.get("test_ratio", 0.2),
         disjoint_train_ratio=training_params.get("disjoint_train_ratio", 0.0),
-        batch_size=training_params.get("batch_size", 128)
+        batch_size=training_params.get("batch_size", 128),
+        num_neighbors=num_neighbors
     )
     
     # Create the model using prepare_model to avoid parameter parsing duplication
@@ -256,12 +304,28 @@ def train_model(
     best_ap = 0
     best_ap_model = None
     best_epoch = 0
-    n_epochs = model_params.get("epochs", 30)
+    # Early stopping parameters
+    patience = 12  # Stop training if no improvement for 12 epochs
+    max_epochs = 100  # Maximum number of epochs to train
+    best_val_loss = float('inf')
+    counter = 0  # Count epochs without improvement
+    
+    # Get actual epochs setting from config with a max of 100
+    n_epochs = min(model_params.get("max_epochs", max_epochs), max_epochs)
     
     # Training loop
     assay_ap_total, gene_ap_total = [], []
     
+    # Print cell names being tracked for debugging
+    debug_cell_indices = [0, 1, 2, 3]  # Same indices as in the model
+    cell_names_tracked = [cells[i] if i < len(cells) else f"Unknown cell {i}" for i in debug_cell_indices]
+    print(f"\nTracking embeddings for these cells during training: {cell_names_tracked}")
+    
     for epoch in range(n_epochs):
+        # Update the model's debug epoch counter
+        if hasattr(hetGNNmodel, 'set_debug_epoch'):
+            hetGNNmodel.set_debug_epoch(epoch)
+        
         # Training phase
         total_train_loss = 0
         hetGNNmodel.train()
@@ -296,10 +360,23 @@ def train_model(
                 gcn_model=model_params.get("gcn_model", "simple")
             )
             
+            # Check for improvement in validation loss
+            if val_loss < best_val_loss:
+                best_val_loss = val_loss
+                counter = 0  # Reset counter
+            else:
+                counter += 1  # Increment counter
+            
+            # Check for improvement in AP
             if ap_val > best_ap:
                 best_ap = ap_val
                 best_ap_model = deepcopy(hetGNNmodel.state_dict())
                 best_epoch = epoch
+                
+            # Early stopping check
+            if counter >= patience:
+                print(f"Early stopping triggered after {epoch} epochs. No improvement for {patience} consecutive epochs.")
+                break
         
         # Evaluate on full prediction data
         total_preds_out, assay_corr_mean, assay_ap, gene_ap = evaluate_full_predictions(
@@ -331,7 +408,7 @@ def train_model(
     
     # Save the model
     os.makedirs(os.path.join(output_path, 'model'), exist_ok=True)
-    cancer_type = graph_params.get("cancer_type", "All").replace(' ', '_')
+    cancer_type = graph_params['cancer_type']
     gene_feat = graph_params.get("gene_feat_name", "cgp")
     cell_feat = graph_params.get("cell_feat_name", "cnv")
     seed = config.get("settings", {}).get("seed", 42)
@@ -339,7 +416,7 @@ def train_model(
     model_path = os.path.join(
         output_path, 
         'model', 
-        f'{gene_feat}-{cell_feat}-seedwith{seed}-at{best_epoch}.pt'
+        f'{cancer_type.replace(" ", "_") if cancer_type else "All"}-{gene_feat}-{cell_feat}-seedwith{seed}-at{best_epoch}.pt'
     )
     
     torch.save(best_ap_model, model_path)

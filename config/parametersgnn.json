@@ -1,0 +1,38 @@
+{   "settings": {
+      "experiment_name": "All cancer types, expression_marker_genes_hvg, cgp, model_Jovana, mutation",
+      "seed": 37,
+      "save_full_predictions": true,
+      "plot_cell_embeddings": true
+    },
+    "graph_parameters": {
+      "cancer_type": null,
+      "base_path": "./Data/",
+      "cell_feat_name": "expression_marker_genes_hvg",
+      "gene_feat_name": "cgp",
+      "ppi": "Reactome",
+      "crp_pos": 0.5,
+      "metapaths": [ "mutation" ]
+    },   
+    "model_parameters": {
+      "model_name": "HetGNN_Model_Jovana",
+      "hidden_features": "-1,256,128",
+      "dropout": 0.2,
+      "lr": 0.01,
+      "max_epochs": 100,
+      "emb_dim": "512",
+      "heads": "1,1",
+      "lp_model": "simple",
+      "gcn_model": "simple",
+      "aggregate": "mean",
+      "cell_layer_type": "gnn"
+    },
+    "training_parameters": {
+      "batch_size": 128,
+      "validation_ratio": 0.1,
+      "test_ratio": 0.2,
+      "disjoint_train_ratio": 0.0,
+      "num_neighbors": [40,20]
+
+    }
+  }
+  

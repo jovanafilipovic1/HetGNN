@@ -17,7 +17,7 @@ class Create_heterogeneous_graph:
     
     This class handles the creation of a PyTorch Geometric HeteroData object with:
     - Two node types: genes and cell lines
-    - Two edge types: gene-gene interactions and gene-cell line dependencies
+    - Three edge types: gene-gene interactions, gene-cell line dependencies, and cell line-gene mutations
     - Features for both node types
     
     Attributes:
@@ -28,6 +28,7 @@ class Create_heterogeneous_graph:
         crispr_threshold_pos (float): Threshold for positive dependency
         crispr_threshold_neg (float): Threshold for negative dependency
         std_threshold (float): Threshold for standard deviation filtering 
+        metapaths (List[str], optional): List of metapaths to add to the graph
     """
     
     def __init__(self, BASE_PATH: str, cell_feature: str, gene_feature: str, cancer_type: str = None, metapaths: Optional[List[str]] = None):
@@ -39,7 +40,8 @@ class Create_heterogeneous_graph:
             cell_feature (str): Type of cell line feature to use (e.g., "cnv", "expression")
             gene_feature (str): Type of gene feature to use (e.g., "cgp", "bp")
             cancer_type (str, optional): Type of cancer to filter cell lines by
-            metapaths (List[str], optional): List of metapaths to add to the graph
+            metapaths (List[str], optional): List of metapaths to add to the graph.
+                Valid options include: "gene_cell_gene", "cell_gene_cell", "mutation"
         """
         self.BASE_PATH = BASE_PATH
         self.cancer_type = cancer_type
@@ -173,6 +175,54 @@ class Create_heterogeneous_graph:
         
         return dependency_df
 
+    def create_mutation_network(self, focus_genes: List[str], focus_cells: List[str]) -> pd.DataFrame:
+        """
+        Create a mutation network from somatic mutation data.
+        Add edges between cell lines and genes where a mutation exists (non-zero value).
+        
+        Args:
+            focus_genes (List[str]): List of genes to consider for mutations
+            focus_cells (List[str]): List of cell lines to consider for mutations
+            
+        Returns:
+            pd.DataFrame: Mutation edge list with columns ['cell', 'gene', 'value']
+        """
+        # Load mutation data
+        mutation_path = self.BASE_PATH + 'Depmap/OmicsSomaticMutationsMatrixDamaging.csv'
+        print(f"Loading mutation data from {mutation_path}")
+        
+        
+        mutation_data = pd.read_csv(mutation_path, header=0, index_col=0)
+        # Clean gene column names (remove any text after space if present)
+        mutation_data.columns = [i.split(' ')[0] for i in mutation_data.columns]
+    
+        # Filter for relevant genes and cells
+        relevant_genes = [g for g in focus_genes if g in mutation_data.columns]
+        relevant_cells = [c for c in focus_cells if c in mutation_data.index]
+        
+        if len(relevant_genes) == 0 or len(relevant_cells) == 0:
+            print(f"Warning: No overlapping genes or cells found in mutation data")
+            print(f"Genes overlap: {len(relevant_genes)}/{len(focus_genes)}")
+            print(f"Cells overlap: {len(relevant_cells)}/{len(focus_cells)}")
+            return pd.DataFrame(columns=['cell', 'gene', 'value'])
+        
+        # Filter mutation data to relevant genes and cells
+        filtered_mutation = mutation_data.loc[relevant_cells, relevant_genes]
+        
+        # Create edge list for non-zero values
+        mutation_edges = []
+        
+        for cell, row in filtered_mutation.iterrows():
+            for gene, value in row.items():
+                if value != 0:  # Only add edges for non-zero values
+                    mutation_edges.append([cell, gene, value])
+        
+        # Create dataframe with cell, gene, and value columns
+        mutation_df = pd.DataFrame(mutation_edges, columns=['cell', 'gene', 'value'])
+        
+        print(f"Created mutation network with {len(mutation_df)} edges")
+        return mutation_df
+
     def read_gmt_file(self, file_path: str, gene_list: List[str]) -> Dict[str, Set[str]]:
         """
         Read GMT file and return a dictionary of gene sets.
@@ -216,6 +266,8 @@ class Create_heterogeneous_graph:
             gmt_file = self.BASE_PATH + "MsigDB/c5.go.v2023.2.Hs.symbols.gmt"
         elif self.gene_feature == 'cp':
             gmt_file = self.BASE_PATH + "MsigDB/c2.cp.v2023.2.Hs.symbols.gmt"
+        elif self.gene_feature == 'C4':
+            gmt_file = self.BASE_PATH + "MsigDB/c4.all.v2024.1.Hs.symbols.gmt"
         else:
             raise ValueError(f"Unsupported gene feature type: {self.gene_feature}")
         
@@ -398,6 +450,11 @@ class Create_heterogeneous_graph:
         """
         Add metapaths to the HeteroData object.
         
+        Supported metapaths:
+        - "gene_cell_gene": Connects genes through cell dependencies
+        - "cell_gene_cell": Connects cells through gene dependencies
+        - "mutation": Connects cells with common mutations
+        
         Args:
             data (HeteroData): The HeteroData object to add metapaths to
             
@@ -414,11 +471,13 @@ class Create_heterogeneous_graph:
         
         MP = []
         if "gene_cell_gene" in self.metapaths:
-            MP.append( [("gene", "dependency_of", "cell"), ("cell", "rev_dependency_of", "gene")])
+            MP.append([("gene", "dependency_of", "cell"), ("cell", "rev_dependency_of", "gene")])
         if "cell_gene_cell" in self.metapaths:
-            MP.append([("cell", "rev_dependency_of", "gene"), ("gene", "dependency_of", "cell")]) 
+            MP.append([("cell", "rev_dependency_of", "gene"), ("gene", "dependency_of", "cell")])
+        if "mutation" in self.metapaths and ('cell', 'has_mutation_in', 'gene') in data.edge_types:
+            MP.append([("cell", "has_mutation_in", "gene"), ("gene", "rev_has_mutation_in", "cell")])
 
-        print(MP)
+        print(f"Adding the following metapaths: {MP}")
 
         transform = T.AddMetaPaths(
             metapaths=MP,
@@ -454,6 +513,15 @@ class Create_heterogeneous_graph:
             raise ValueError(f"Invalid gene index in dependency edges: max allowed {max_gene_idx}")
         if torch.any(dep_edges[1] > len(cell2int) - 1):
             raise ValueError(f"Invalid cell index in dependency edges: max allowed {len(cell2int) - 1}")
+            
+        # Validate mutation edges if they exist
+        if ('cell', 'has_mutation_in', 'gene') in data.edge_types:
+            mut_edges = data['cell', 'has_mutation_in', 'gene'].edge_index
+            max_cell_idx = len(cell2int) - 1
+            if torch.any(mut_edges[0] > max_cell_idx):
+                raise ValueError(f"Invalid cell index in mutation edges: max allowed {max_cell_idx}")
+            if torch.any(mut_edges[1] > max_gene_idx):
+                raise ValueError(f"Invalid gene index in mutation edges: max allowed {max_gene_idx}")
             
         return True
 
@@ -523,6 +591,19 @@ class Create_heterogeneous_graph:
             dependency_df['cell'].isin(final_cells)
         ]
         
+        # Create mutation network if metapaths includes "mutation"
+        mutation_df = None
+        if self.metapaths and "mutation" in self.metapaths:
+            print("Creating mutation network...")
+            mutation_df = self.create_mutation_network(final_genes, final_cells)
+            
+            # Filter mutation edges to include only genes and cells with features
+            if not mutation_df.empty:
+                mutation_df = mutation_df[
+                    mutation_df['gene'].isin(final_genes) & 
+                    mutation_df['cell'].isin(final_cells)
+                ]
+        
         # Convert edge lists to tensors with explicit dtype and ensure contiguity
         ppi_edge_index = torch.tensor([
             [gene2int[row.Gene_A], gene2int[row.Gene_B]] 
@@ -557,6 +638,19 @@ class Create_heterogeneous_graph:
         data['gene', 'dependency_of', 'cell'].edge_index = all_dep_edge_index
         data['gene', 'dependency_of', 'cell'].edge_label = edge_label
         
+        # Add mutation edges if available
+        if mutation_df is not None and not mutation_df.empty:
+            mutation_edge_index = torch.tensor([
+                [cell2int[cell], gene2int[gene]] 
+                for cell, gene, _ in mutation_df.values
+            ], dtype=torch.long).t().contiguous()
+            
+            # Add mutation edge values as edge attributes
+            edge_attr = torch.tensor(mutation_df['value'].values, dtype=torch.float)
+            
+            data['cell', 'has_mutation_in', 'gene'].edge_index = mutation_edge_index
+            data['cell', 'has_mutation_in', 'gene'].edge_attr = edge_attr
+        
         # Validate edges before converting to undirected
         self.validate_edges(data, gene2int, cell2int)
         
@@ -588,7 +682,7 @@ class Create_heterogeneous_graph:
         filepath = os.path.join(
             self.BASE_PATH,
             'multigraphs',
-            f'heteroData_gene_cell_{self.cancer_type.replace(" ", "_") if self.cancer_type else "All"}_{self.gene_feature}_{self.cell_feature}_{"META" if self.metapaths else ""}.pt'
+            f'heteroData_gene_cell_{self.cancer_type.replace(" ", "_") if self.cancer_type else "All"}_{self.gene_feature}_{self.cell_feature}_{"META2" if self.metapaths else ""}.pt'
         )
         os.makedirs(os.path.dirname(filepath), exist_ok=True)
         torch.save(obj=data, f=filepath)

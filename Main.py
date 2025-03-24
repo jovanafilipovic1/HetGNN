@@ -1,6 +1,7 @@
 import torch
 import os
 import json
+import argparse
 from typing import Dict, List, Tuple, Any, Optional, Union
 from torch_geometric import seed_everything
 from NetworkAnalysis import Create_heterogeneous_graph
@@ -10,10 +11,15 @@ from modules import (
     process_data_and_create_mappings
 )
 
+args = argparse.ArgumentParser()
+args.add_argument("--config", type=str, default="config/parameters.json")   
+args = args.parse_args()
+
+
 if __name__ == "__main__":
     
     # Load configuration from the JSON file
-    with open('config/parameters.json', 'r') as config_file:
+    with open(args.config, 'r') as config_file:
         config = json.load(config_file)
 
     # Extract parameters with new structure
@@ -41,13 +47,13 @@ if __name__ == "__main__":
         filepath = os.path.join(
             graph_params["base_path"],
             'multigraphs',
-            f'heteroData_gene_cell_{graph_params["cancer_type"].replace(" ", "_") if graph_params["cancer_type"] else "All"}_{graph_params["gene_feat_name"]}_{graph_params["cell_feat_name"]}_{"META" if graph_params["metapaths"] else ""}.pt'
+            f'heteroData_gene_cell_{graph_params["cancer_type"].replace(" ", "_") if graph_params["cancer_type"] else "All"}_{graph_params["gene_feat_name"]}_{graph_params["cell_feat_name"]}_{"META2" if graph_params["metapaths"] else ""}.pt'
         )
         heterodata_obj = torch.load(filepath)
         print(f"Loaded heterodata object from {filepath}")
 
     except Exception as e:
-        print(f"No file found, creating new one: {e}")
+        print( e, f"No file found, creating new one...")
         graph_creator = Create_heterogeneous_graph(
             BASE_PATH=graph_params["base_path"],
             cancer_type=graph_params["cancer_type"],
@@ -56,7 +62,8 @@ if __name__ == "__main__":
             metapaths=graph_params["metapaths"]
         )
         heterodata_obj = graph_creator.run_pipeline()
-        print(heterodata_obj)
+        
+    print(heterodata_obj)
     
     # Process data and create mappings
     (
