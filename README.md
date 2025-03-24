@@ -36,6 +36,10 @@ This will use the configuration in `config/parameters.json` to call or create th
 - Expression: OmicsExpressionProteinCodingGenesTPMLogp1.csv
 - Mutations: OmicsSomaticMutationsMatrixDamaging.csv
 
+### Additional cell feature data
+- MOSA cell line embeddings can be found in the directory `MOSA/reports/vae/files`. [Cai et al.](https://doi.org/10.1038/s41467-024-54771-4)
+- Dependency-marker associations can be found in supplementary material of the following paper: [Pacini et al. (2024b)](https://doi.org/10.1016/j.ccell.2023.12.016)
+
 ### Gene features: [Human MsigDB Collections](https://www.gsea-msigdb.org/gsea/msigdb/human/collections.jsp)
 - C2: [chemical and genetic perturbations](https://www.gsea-msigdb.org/gsea/msigdb/download_file.jsp?filePath=/msigdb/release/2024.1.Hs/c2.cgp.v2024.1.Hs.symbols.gmt) (cgp)
 - C4: [computational gene sets defined by mining large collections of cancer-oriented expression data](https://www.gsea-msigdb.org/gsea/msigdb/download_file.jsp?filePath=/msigdb/release/2024.1.Hs/c4.all.v2024.1.Hs.symbols.gmt)
