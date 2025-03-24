@@ -160,10 +160,11 @@ def save_results(
     """
     # Extract parameters from config
     graph_params = config['graph_parameters']
-    cancer_type = graph_params.get("cancer_type", "All").replace(' ', '_')
-    ppi = graph_params.get("ppi", "Reactome")
-    gene_feat = graph_params.get("gene_feat_name", "cgp")
-    cell_feat = graph_params.get("cell_feat_name", "cnv")
+    model_params = config['model_parameters']
+    cancer_type = graph_params.get("cancer_type") 
+    gene_feat = graph_params.get("gene_feat_name")
+    cell_feat = graph_params.get("cell_feat_name")
+    model_name = model_params.get("model_name")
     
     # Create output directories
     file_output_dir = os.path.join(output_path, 'file')
@@ -174,7 +175,7 @@ def save_results(
     # Save gene embeddings
     gene_embs_file = os.path.join(
         file_output_dir,
-        f"{cancer_type}_{ppi}_crispr{str(crp_pos).replace('.', '_')}_HetGNN_gene_embs_{gene_feat}_{cell_feat}_{seed}.csv"
+        f"{cancer_type.replace(' ', '_') if cancer_type else 'All'}_crispr{str(crp_pos).replace('.', '_')}_{model_name}_{gene_feat}_{cell_feat}_Gene_embs_{seed}.csv"
     )
     dfs["gene_embeddings"].to_csv(gene_embs_file)
     print(f"Saved gene embeddings to {gene_embs_file}")
@@ -182,7 +183,7 @@ def save_results(
     # Save cell embeddings
     cell_embs_file = os.path.join(
         file_output_dir,
-        f"{cancer_type}_{ppi}_crispr{str(crp_pos).replace('.', '_')}_HetGNN_cell_embs_{gene_feat}_{cell_feat}_{seed}.csv"
+        f"{cancer_type.replace(' ', '_') if cancer_type else 'All'}_crispr{str(crp_pos).replace('.', '_')}_{model_name}_{gene_feat}_{cell_feat}_Cell_embs_{seed}.csv"
     )
     dfs["cell_embeddings"].to_csv(cell_embs_file)
     print(f"Saved cell embeddings to {cell_embs_file}")
@@ -190,7 +191,7 @@ def save_results(
     # Save predictions
     preds_file = os.path.join(
         file_output_dir,
-        f"{cancer_type}_{ppi}_crispr{str(crp_pos).replace('.', '_')}_HetGNN_{gene_feat}_{cell_feat}_{seed}.csv"
+        f"{cancer_type.replace(' ', '_') if cancer_type else 'All'}_crispr{str(crp_pos).replace('.', '_')}_{model_name}_{gene_feat}_{cell_feat}_Predictions_{seed}.csv"
     )
     dfs["predictions"].to_csv(preds_file)
     print(f"Saved predictions to {preds_file}")
@@ -203,7 +204,7 @@ def save_results(
             output_dir=figure_output_dir,
             base_path=graph_params.get("base_path", "./Data/"),
             cancer_type=cancer_type,
-            epoch=config.get("model_parameters", {}).get("epochs", 30)
+            epoch=config.get("model_parameters", {}).get("max_epochs", 30)
         )
 
 def plot_embeddings(
@@ -225,36 +226,104 @@ def plot_embeddings(
         cancer_type: Cancer type for the title
         epoch: Number of epochs trained
     """
-    # Apply t-SNE
-    tsne = TSNE(n_components=2, verbose=1)
-    tsne_results = tsne.fit_transform(cell_embs_df.values)
-    tsne_results = pd.DataFrame(data=tsne_results, index=cell_embs_df.index, columns=["dim1", "dim2"])
+    # Verify we have data for all cells
+    expected_cells = set(cells)
+    actual_cells = set(cell_embs_df.index)
+    missing_cells = expected_cells - actual_cells
     
-    # Get cell metadata
-    try:
-        ccles = pd.read_csv(os.path.join(base_path, "Depmap/Model.csv"), header=0, index_col=0)
-        if '_' in cancer_type:
-            tsne_results['cancer_type'] = ccles.loc[cells, 'OncotreePrimaryDisease']
-        else:
-            tsne_results['cancer_type'] = ccles.loc[cells, 'OncotreeSubtype']
-    except Exception as e:
-        print(f"Could not load cell metadata: {e}")
-        tsne_results['cancer_type'] = 'Unknown'
+    if missing_cells:
+        print(f"Warning: Missing embeddings for {len(missing_cells)} cells.")
+        print(f"Examples of missing cells: {list(missing_cells)[:5]}")
     
-    # Create plot
-    fig, ax = plt.subplots(figsize=(16, 10))
-    sns.scatterplot(
-        x="dim1", y="dim2",
-        hue="cancer_type",
-        palette=sns.color_palette("colorblind", tsne_results['cancer_type'].unique().shape[0]),
-        data=tsne_results,
-        legend="full",
-        alpha=0.8,
-        ax=ax
+    print(f"Creating t-SNE plot with {len(cell_embs_df)} cell embeddings")
+    
+    # Apply t-SNE with adjusted parameters
+    tsne = TSNE(
+        n_components=2,
+        perplexity=min(30, max(5, len(cell_embs_df) // 5)),  # Adjust perplexity based on dataset size
+        n_iter=1000,
+        learning_rate='auto',
+        init='pca',
+        verbose=1
     )
-    plt.title(f"{cancer_type} clustering after {epoch} epochs")
     
-    # Save the figure
-    plt.savefig(os.path.join(output_dir, f"{epoch}_GAT_tsne_embeddings.png"))
-    plt.close()
-    print(f"Saved t-SNE plot to {os.path.join(output_dir, f'{epoch}_GAT_tsne_embeddings.png')}") 
+    try:
+        tsne_results = tsne.fit_transform(cell_embs_df.values)
+        tsne_results = pd.DataFrame(data=tsne_results, index=cell_embs_df.index, columns=["dim1", "dim2"])
+        
+        # Get cell metadata
+        try:
+            ccles = pd.read_csv(os.path.join(base_path, "Depmap/Model.csv"), header=0, index_col=0)
+            
+            # Make sure cells exist in the metadata
+            valid_cells = [cell for cell in cell_embs_df.index if cell in ccles.index]
+            
+            if len(valid_cells) < len(cell_embs_df):
+                print(f"Warning: Only {len(valid_cells)}/{len(cell_embs_df)} cells found in metadata")
+            
+            if '_' in cancer_type:
+                tsne_results['cancer_type'] = pd.Series(
+                    index=cell_embs_df.index,
+                    data=['Unknown'] * len(cell_embs_df)
+                )
+                
+                # Set cancer type for valid cells only
+                for cell in valid_cells:
+                    tsne_results.loc[cell, 'cancer_type'] = ccles.loc[cell, 'OncotreePrimaryDisease']
+            else:
+                tsne_results['cancer_type'] = pd.Series(
+                    index=cell_embs_df.index,
+                    data=['Unknown'] * len(cell_embs_df)
+                )
+                
+                # Set cancer type for valid cells only
+                for cell in valid_cells:
+                    tsne_results.loc[cell, 'cancer_type'] = ccles.loc[cell, 'OncotreeSubtype']
+                    
+        except Exception as e:
+            print(f"Could not load cell metadata: {e}")
+            tsne_results['cancer_type'] = 'Unknown'
+        
+        # Count number of cells per cancer type for debugging
+        type_counts = tsne_results['cancer_type'].value_counts()
+        print(f"Cell distribution by cancer type: {type_counts.to_dict()}")
+        
+        # Create plot
+        fig, ax = plt.subplots(figsize=(16, 10))
+        
+        # Add sample count to legend labels
+        cancer_types = tsne_results['cancer_type'].unique()
+        
+        # Create a more informative scatter plot
+        scatter = sns.scatterplot(
+            x="dim1", y="dim2",
+            hue="cancer_type",
+            palette=sns.color_palette("colorblind", len(cancer_types)),
+            data=tsne_results,
+            legend="full",
+            alpha=0.8,
+            s=100,  # Larger point size
+            ax=ax
+        )
+        
+        # Add cell names as labels for better identification
+        for idx, row in tsne_results.iterrows():
+            plt.text(row['dim1'] + 0.02, row['dim2'] + 0.02, idx, fontsize=8)
+        
+        plt.title(f"{cancer_type} Cell Line Embeddings t-SNE (n={len(cell_embs_df)})")
+        
+        # Improve legend
+        plt.legend(title="Cancer Type", bbox_to_anchor=(1.05, 1), loc='upper left')
+        
+        # Construct filename in the same format as cell_embs and gene_embs
+        cancer_type_filename = cancer_type.replace(" ", "_") if cancer_type else "All"
+        output_filename = f"{cancer_type_filename}_epoch_{epoch}_tsne_cell_embeddings.png"
+        
+        # Save the figure
+        plt.tight_layout()
+        plt.savefig(os.path.join(output_dir, output_filename), dpi=300)
+        plt.close()
+        print(f"Saved t-SNE plot to {os.path.join(output_dir, output_filename)}")
+        
+    except Exception as e:
+        print(f"Error creating t-SNE plot: {e}") 

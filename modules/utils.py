@@ -99,8 +99,8 @@ def process_data_and_create_mappings(
     crispr_neurobl_continuous = crispr_neurobl_continuous.loc[:, common_dep_genes]
     
     # Binarize CRISPR data
-    crp_pos = config.get('graph_parameters', {}).get('crp_pos', -1.5)
-    crispr_neurobl_bin = crispr_neurobl_continuous.applymap(lambda x: int(x < crp_pos))
+    crp_pos = config.get('graph_parameters', {}).get('crp_pos', 0.5)
+    crispr_neurobl_bin = crispr_neurobl_continuous.applymap(lambda x: int(x > crp_pos))
     
     # Delete names attributes from heterodata object
     if hasattr(heterodata_obj['gene'], 'names'):
