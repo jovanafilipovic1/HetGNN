@@ -8,7 +8,6 @@ from torch_geometric.data import HeteroData
 from torch_geometric.loader.link_neighbor_loader import LinkNeighborLoader
 import torch_geometric.transforms as T
 from models.HetGNN_Model_Jovana import HeteroData_GNNmodel_Jovana
-from models.model_Jihwan import HeteroData_GNNmodel_Jihwan
 from modules.validation import validate_model, evaluate_full_predictions
 
 def parse_model_parameters(
@@ -34,21 +33,9 @@ def parse_model_parameters(
     # Process each value in the hidden_features string
     for x in hidden_features_str.split(','):
         if x == '-1':
-            # For Jihwan's model, -1 should remain as -1, not converted to tuple
-            if model_params.get("model_name", "HetGNN_Model_Jovana") == "HetGNN_Model_Jihwan":
-                hidden_features.append(-1)
-            else:
-                hidden_features.append(-1)  # Will be processed to tuple later if needed
+            hidden_features.append(-1)
         else:
             hidden_features.append(int(x))
-    
-    # Handle the special case for features[0] for Jovana's model only
-    if model_params.get("model_name", "HetGNN_Model_Jovana") == "HetGNN_Model_Jovana" and hidden_features[0] == -1:
-        hidden_features[0] = (-1, -1)
-    
-    # Parse heads
-    heads_str = model_params.get("heads", "1,1")
-    heads = [int(x) for x in heads_str.split(',')]
     
     # Parse embedding dimensions
     emb_dim = str(model_params.get("emb_dim", 512))
@@ -60,13 +47,12 @@ def parse_model_parameters(
     
     return {
         "embedding_dim": emb_dim,
-        "features": hidden_features,
-        "heads": heads,
+        "hidden_features": hidden_features,
         "dropout": model_params.get("dropout", 0.2),
         "lp_model": model_params.get("lp_model", "simple"),
         "features_dim": features_dim,
         "aggregate": model_params.get("aggregate", "mean"),
-        "cell_layer_type": model_params.get("cell_layer_type", "gnn")
+        "model_type": model_params.get("model_type", "gnn-gnn")  # Default to gnn-gnn
     }
 
 def prepare_model(
@@ -99,39 +85,20 @@ def prepare_model(
     # Parse model parameters
     parsed_params = parse_model_parameters(model_params, node_types, features_dim)
     
-    if model_params.get("model_name", "HetGNN_Model_Jovana") == "HetGNN_Model_Jovana":
-        # Create the model
-        model = HeteroData_GNNmodel_Jovana(
-            heterodata=heterodata_obj,
-            node_types=node_types,
-            node_types_to_pred=node_types,
-            embedding_dim=parsed_params["embedding_dim"],
-            dropout=parsed_params["dropout"],
-            act_fn=torch.nn.ReLU,
-            lp_model=parsed_params["lp_model"],
-            features_dim=parsed_params["features_dim"],
-            aggregate=parsed_params["aggregate"],
-            heads=parsed_params["heads"],
-            cell_layer_type=parsed_params["cell_layer_type"]
-        )
-    
-    elif model_params.get("model_name", "HetGNN_Model_Jovana") == "HetGNN_Model_Jihwan":
-        model = HeteroData_GNNmodel_Jihwan(
-            heterodata=heterodata_obj,
-            node_types=node_types,
-            node_types_to_pred=node_types,
-            embedding_dim=parsed_params["embedding_dim"],
-            gcn_model=model_params.get("gcn_model", "simple"),
-            features=parsed_params["features"],
-            layer_name=model_params.get("layer_name", "GCN"),
-            heads=parsed_params["heads"],
-            dropout=parsed_params["dropout"],
-            act_fn=torch.nn.ReLU,
-            lp_model=parsed_params["lp_model"],
-            features_dim=parsed_params["features_dim"],
-            aggregate=parsed_params["aggregate"],
-            return_attention_weights=model_params.get("return_attention_weights", False)
-        )
+    # Create the model
+    model = HeteroData_GNNmodel_Jovana(
+        heterodata=heterodata_obj,
+        node_types=node_types,
+        node_types_to_pred=node_types,
+        embedding_dim=parsed_params["embedding_dim"],
+        dropout=parsed_params["dropout"],
+        act_fn=torch.nn.ReLU,
+        lp_model=parsed_params["lp_model"],
+        features_dim=parsed_params["features_dim"],
+        aggregate=parsed_params["aggregate"],
+        model_type=parsed_params["model_type"],
+        hidden_features=parsed_params["hidden_features"]
+    )
         
     model.to(device)
     print(model)
@@ -316,15 +283,11 @@ def train_model(
     # Training loop
     assay_ap_total, gene_ap_total = [], []
     
-    # Print cell names being tracked for debugging
-    debug_cell_indices = [0, 1, 2, 3]  # Same indices as in the model
-    cell_names_tracked = [cells[i] if i < len(cells) else f"Unknown cell {i}" for i in debug_cell_indices]
-    print(f"\nTracking embeddings for these cells during training: {cell_names_tracked}")
+    # Get gradient clipping parameter with a default value of 1.0
+    max_grad_norm = training_params.get("max_grad_norm", 1.0)
+    print(f"Using gradient clipping with max_norm={max_grad_norm}")
     
     for epoch in range(n_epochs):
-        # Update the model's debug epoch counter
-        if hasattr(hetGNNmodel, 'set_debug_epoch'):
-            hetGNNmodel.set_debug_epoch(epoch)
         
         # Training phase
         total_train_loss = 0
@@ -344,6 +307,10 @@ def train_model(
             total_train_loss += loss.item()
             
             loss.backward()
+            
+            # Apply gradient clipping to prevent gradient explosion
+            torch.nn.utils.clip_grad_norm_(hetGNNmodel.parameters(), max_norm=max_grad_norm)
+            
             optimizer.step()
         
         # Validation phase

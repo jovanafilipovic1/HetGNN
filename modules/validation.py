@@ -10,8 +10,7 @@ def validate_model(
     val_data: Any,
     device: str,
     loss_fn: torch.nn.Module,
-    edge_type_label: str = "gene,dependency_of,cell",
-    gcn_model: str = "simple"
+    edge_type_label: str = "gene,dependency_of,cell"
 ) -> Tuple[float, float, float]:
     """
     Validate model performance on validation data.
@@ -22,7 +21,6 @@ def validate_model(
         device: Device to run validation on ('cpu' or 'cuda:x')
         loss_fn: Loss function
         edge_type_label: Edge type label to use for prediction
-        gcn_model: GCN model type ('gat' or 'simple')
         
     Returns:
         Tuple of (validation loss, AUC, AP)
@@ -30,10 +28,7 @@ def validate_model(
     model.eval()
     with torch.no_grad():
         val_data = val_data.to(device)
-        if gcn_model == 'gat':
-            out, attw = model(val_data, edge_type_label=edge_type_label)
-        else:
-            out = model(val_data, edge_type_label=edge_type_label)
+        out = model(val_data, edge_type_label=edge_type_label)
         
         pred = torch.sigmoid(out)
         ground_truth = val_data["gene", "dependency_of", "cell"].edge_label

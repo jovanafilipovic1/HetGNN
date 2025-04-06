@@ -73,9 +73,12 @@ All parameters are defined in `config/parameters.json`. Here's what each section
 - `max_epochs`: Maximum number of training epochs (early stopping will occur if validation loss doesn't improve for 12 consecutive epochs)
 - `emb_dim`: Embedding dimension
 - `heads`: Number of attention heads for each layer as comma-separated string (e.g., "1,1")
-- `lp_model`: Link prediction model type (e.g., "simple")
+- `lp_model`: Link prediction model type:
+  - `"simple"`: Uses a dot product between node embeddings (faster, fewer parameters)
+  - `"deep"`: Uses feature concatenation followed by an MLP (more expressive, more parameters)
 - `gcn_model`: GNN model type (e.g., "simple")
 - `aggregate`: Aggregation function (e.g., "mean")
+- `cell_layer_type`: Type of layer to use for cell lines ("gnn" or "linear")
 
 ### Training Parameters
 - `batch_size`: Training batch size
