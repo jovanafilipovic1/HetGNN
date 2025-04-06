@@ -164,7 +164,7 @@ def save_results(
     cancer_type = graph_params.get("cancer_type") 
     gene_feat = graph_params.get("gene_feat_name")
     cell_feat = graph_params.get("cell_feat_name")
-    model_name = model_params.get("model_name")
+    model_type = model_params.get("model_type", "gnn-gnn")
     
     # Create output directories
     file_output_dir = os.path.join(output_path, 'file')
@@ -175,7 +175,7 @@ def save_results(
     # Save gene embeddings
     gene_embs_file = os.path.join(
         file_output_dir,
-        f"{cancer_type.replace(' ', '_') if cancer_type else 'All'}_crispr{str(crp_pos).replace('.', '_')}_{model_name}_{gene_feat}_{cell_feat}_Gene_embs_{seed}.csv"
+        f"{cancer_type.replace(' ', '_') if cancer_type else 'All'}_crispr{str(crp_pos).replace('.', '_')}_{model_type}_{gene_feat}_{cell_feat}_Gene_embs_{seed}.csv"
     )
     dfs["gene_embeddings"].to_csv(gene_embs_file)
     print(f"Saved gene embeddings to {gene_embs_file}")
@@ -183,7 +183,7 @@ def save_results(
     # Save cell embeddings
     cell_embs_file = os.path.join(
         file_output_dir,
-        f"{cancer_type.replace(' ', '_') if cancer_type else 'All'}_crispr{str(crp_pos).replace('.', '_')}_{model_name}_{gene_feat}_{cell_feat}_Cell_embs_{seed}.csv"
+        f"{cancer_type.replace(' ', '_') if cancer_type else 'All'}_crispr{str(crp_pos).replace('.', '_')}_{model_type}_{gene_feat}_{cell_feat}_Cell_embs_{seed}.csv"
     )
     dfs["cell_embeddings"].to_csv(cell_embs_file)
     print(f"Saved cell embeddings to {cell_embs_file}")
@@ -191,7 +191,7 @@ def save_results(
     # Save predictions
     preds_file = os.path.join(
         file_output_dir,
-        f"{cancer_type.replace(' ', '_') if cancer_type else 'All'}_crispr{str(crp_pos).replace('.', '_')}_{model_name}_{gene_feat}_{cell_feat}_Predictions_{seed}.csv"
+        f"{cancer_type.replace(' ', '_') if cancer_type else 'All'}_crispr{str(crp_pos).replace('.', '_')}_{model_type}_{gene_feat}_{cell_feat}_Predictions_{seed}.csv"
     )
     dfs["predictions"].to_csv(preds_file)
     print(f"Saved predictions to {preds_file}")

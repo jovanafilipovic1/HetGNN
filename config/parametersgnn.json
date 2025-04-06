@@ -14,25 +14,21 @@
       "metapaths": [ "mutation" ]
     },   
     "model_parameters": {
-      "model_name": "HetGNN_Model_Jovana",
       "hidden_features": "-1,256,128",
       "dropout": 0.2,
-      "lr": 0.01,
+      "lr": 0.001,
       "max_epochs": 100,
       "emb_dim": "512",
-      "heads": "1,1",
-      "lp_model": "simple",
-      "gcn_model": "simple",
+      "lp_model": "deep",
       "aggregate": "mean",
-      "cell_layer_type": "gnn"
+      "model_type": "gnn-gnn"
     },
     "training_parameters": {
       "batch_size": 128,
       "validation_ratio": 0.1,
       "test_ratio": 0.2,
       "disjoint_train_ratio": 0.0,
-      "num_neighbors": [40,20]
-
+      "max_grad_norm": 1.0
     }
   }
   
