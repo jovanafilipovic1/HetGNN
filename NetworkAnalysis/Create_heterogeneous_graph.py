@@ -8,6 +8,7 @@ import torch_geometric.transforms as T
 from torch_geometric.transforms import to_undirected
 from torch_geometric.data import HeteroData
 from typing import Dict, List, Set, Tuple, Optional
+from sklearn.preprocessing import StandardScaler
 
 
 class Create_heterogeneous_graph:
@@ -320,7 +321,19 @@ class Create_heterogeneous_graph:
         # Sort cells for consistent ordering
         cells_with_features_list = sorted(list(valid_cells))
         cell2int = {c: i for i, c in enumerate(cells_with_features_list)}
-        cell_feat = torch.from_numpy(feature_df.loc[cells_with_features_list].values).to(torch.float)
+        
+        # Skip normalization for MOSA embeddings
+        if self.cell_feature == "MOSA":
+            print("Using MOSA embeddings without normalization")
+            cell_feat = torch.from_numpy(feature_df.loc[cells_with_features_list].values).to(torch.float)
+        else:
+            # Apply StandardScaler to normalize cell features
+            scaler = StandardScaler()
+            normalized_features = scaler.fit_transform(feature_df.loc[cells_with_features_list].values)
+            print(f"Applied StandardScaler normalization to cell features (mean={scaler.mean_[:5]}..., var={scaler.var_[:5]}...)")
+            
+            # Convert to tensor
+            cell_feat = torch.from_numpy(normalized_features).to(torch.float)
         
         return cell_feat, cell2int, set(cells_with_features_list)
 
@@ -344,7 +357,7 @@ class Create_heterogeneous_graph:
         """Process gene expression features for cell lines."""
         
         # Load expression data
-        path = self.BASE_PATH + 'Depmap/OmicsExpressionProteinCodingGenesTPMLogp1.csv'
+        path = self.BASE_PATH + 'Depmap/OmicsExpressionProteinCodingGenesTPMLogp1BatchCorrected.csv'
         expression = pd.read_csv(path, header=0, index_col=0)
         expression.columns = [i.split(' ')[0] for i in expression.columns]
         

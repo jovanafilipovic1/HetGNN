@@ -1,5 +1,4 @@
 {   "settings": {
-    "experiment_name": "Neuroblastoma, expression_marker_genes, cgp, model_Jovana",
     "seed": 37,
     "save_full_predictions": true,
     "plot_cell_embeddings": true
@@ -7,28 +6,34 @@
   "graph_parameters": {
     "cancer_type": "Neuroblastoma",
     "base_path": "./Data/",
-    "cell_feat_name": "expression_marker_genes",
+    "cell_feat_name": "MOSA",
     "gene_feat_name": "cgp",
     "ppi": "Reactome",
     "crp_pos": 0.5,
-    "metapaths": [ "cell_gene_cell" ]
+    "metapaths": [ "mutation" ]
   },   
   "model_parameters": {
-    "model_name": "HetGNN_Model_Jovana",
     "hidden_features": "-1,256,128",
     "dropout": 0.2,
-    "lr": 0.01,
+    "lr": 0.001,
     "max_epochs": 100,
     "emb_dim": "512",
-    "heads": "1,1",
-    "lp_model": "simple",
-    "gcn_model": "simple",
-    "aggregate": "mean"
+    "lp_model": "deep",
+    "aggregate": "mean",
+    "model_type": "gnn",
+    "activation_function": "sigmoid"
   },
   "training_parameters": {
     "batch_size": 128,
     "validation_ratio": 0.1,
     "test_ratio": 0.2,
-    "disjoint_train_ratio": 0.0
+    "disjoint_train_ratio": 0.0,
+    "max_grad_norm": 1.0
+  },
+  "hyperparam_grid": {
+    "learning_rate": [0.0001, 0.0005, 0.001],
+    "batch_size": [64, 128, 256],
+    "hidden_features": ["-1,128,64", "-1,256,128", "-1,512,256"],
+    "max_grad_norm": [0.5, 1.0, 2]
   }
 }
