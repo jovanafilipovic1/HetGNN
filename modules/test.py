@@ -39,32 +39,51 @@ def test_model(
         
         # Calculate AP scores for each cell line
         test_assay_ap = []
+        skipped_assays = 0
         for cell in set(index[1].numpy()):
             assay_msk = index[1] == cell
-            assay_msk = assay_msk.cpu()
-            test_assay_ap.append(average_precision_score(
-                y_true=ground_truth[assay_msk],
-                y_score=pred[assay_msk]
-            ))
+            y_true = ground_truth[assay_msk]
+            # Only calculate AP score if there is at least one positive example
+            if y_true.sum() > 0:
+                test_assay_ap.append(average_precision_score(
+                    y_true=y_true,
+                    y_score=pred[assay_msk]
+                ))
+            else:
+                skipped_assays += 1
+        
+        if skipped_assays > 0:
+            print(f"Skipped AP calculation for {skipped_assays} cell lines with no positive examples")
            
         # Calculate AP scores for each gene
         test_gene_ap = []
+        skipped_genes = 0
         for gene in set(index[0].numpy()):
             gene_msk = index[0] == gene
-            gene_msk = gene_msk.cpu()
-            if ground_truth[gene_msk].sum() + pred[gene_msk].sum() > 0.5:
+            y_true = ground_truth[gene_msk]
+            # Only calculate AP score if there is at least one positive example
+            if y_true.sum() > 0:
                 test_gene_ap.append(average_precision_score(
-                    y_true=ground_truth[gene_msk],
+                    y_true=y_true,
                     y_score=pred[gene_msk]
                 ))
+            else:
+                skipped_genes += 1
+                
+        if skipped_genes > 0:
+            print(f"Skipped AP calculation for {skipped_genes} genes with no positive examples")
         
         # Calculate overall AP score
-        ap_test = average_precision_score(ground_truth, pred)
+        if ground_truth.sum() > 0:
+            ap_test = average_precision_score(ground_truth, pred)
+        else:
+            print("Warning: No positive examples in test set, setting overall AP to 0.0")
+            ap_test = 0.0
         
     return {
         "test_AP": ap_test,
-        "test_gene_AP": np.mean(test_gene_ap),
-        "test_assay_AP": np.mean(test_assay_ap)
+        "test_gene_AP": np.mean(test_gene_ap) if test_gene_ap else 0.0,
+        "test_assay_AP": np.mean(test_assay_ap) if test_assay_ap else 0.0
     }
 
 def generate_full_predictions(

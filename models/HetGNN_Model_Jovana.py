@@ -378,7 +378,6 @@ class MLP_Model(BaseHetGNNModel):
         node_types_to_pred: List[str],
         embedding_dim: Union[int, Dict[str, int]], 
         features_dim: Dict[str, int],
-        hidden_features: List[int] = None,
         dropout: float = 0.2, 
         act_fn: torch.nn.Module = torch.nn.ReLU(), 
         lp_model: str = 'deep',  # MLP model always uses deep classifier
@@ -390,7 +389,6 @@ class MLP_Model(BaseHetGNNModel):
             node_types_to_pred=node_types_to_pred,
             embedding_dim=embedding_dim,
             features_dim=features_dim,
-            hidden_features=hidden_features,
             dropout=dropout,
             act_fn=act_fn,
             lp_model=lp_model
@@ -650,7 +648,6 @@ def HeteroData_GNNmodel_Jovana(
             node_types_to_pred=node_types_to_pred,
             embedding_dim=embedding_dim,
             features_dim=features_dim,
-            hidden_features=hidden_features,
             dropout=dropout,
             act_fn=act_fn,
             lp_model=lp_model,  # This will be overridden to 'deep' inside the MLP_Model

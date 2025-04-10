@@ -34,8 +34,23 @@ def validate_model(
         ground_truth = val_data["gene", "dependency_of", "cell"].edge_label
         val_loss = loss_fn(out, ground_truth)
         
-        auc_val = roc_auc_score(ground_truth.cpu(), pred.cpu())
-        ap_val = average_precision_score(ground_truth.cpu(), pred.cpu())
+        # Check if there are positive examples in ground truth
+        ground_truth_cpu = ground_truth.cpu()
+        pred_cpu = pred.cpu()
+        
+        # For AP, we need at least one positive example
+        if ground_truth_cpu.sum() > 0:
+            ap_val = average_precision_score(ground_truth_cpu, pred_cpu)
+        else:
+            print("Warning: No positive examples in validation set, setting AP to 0.0")
+            ap_val = 0.0
+            
+        # For AUC, we need at least one positive and one negative example
+        if ground_truth_cpu.sum() > 0 and len(ground_truth_cpu) - ground_truth_cpu.sum() > 0:
+            auc_val = roc_auc_score(ground_truth_cpu, pred_cpu)
+        else:
+            print("Warning: Not enough positive/negative examples in validation set for AUC calculation, setting AUC to 0.5")
+            auc_val = 0.5
         
     return val_loss.item(), auc_val, ap_val
 
@@ -87,17 +102,33 @@ def evaluate_full_predictions(
         assay_ap, gene_ap = [], []
         
         # For each cell line calculate AP score
+        valid_assay_count = 0
         for i, row in tot_pred_deps.iterrows():
-            assay_ap.append(average_precision_score(
-                y_true=crispr_neurobl_bin.loc[i].values,
-                y_score=row.values
-            ))
+            y_true = crispr_neurobl_bin.loc[i].values
+            # Only calculate AP score if there is at least one positive example
+            if np.sum(y_true) > 0:
+                assay_ap.append(average_precision_score(
+                    y_true=y_true,
+                    y_score=row.values
+                ))
+                valid_assay_count += 1
         
         # For each gene calculate AP score
+        valid_gene_count = 0
         for col in tot_pred_deps.columns:
-            gene_ap.append(average_precision_score(
-                y_true=crispr_neurobl_bin[col].values,
-                y_score=tot_pred_deps[col].values
-            ))
+            y_true = crispr_neurobl_bin[col].values
+            # Only calculate AP score if there is at least one positive example
+            if np.sum(y_true) > 0:
+                gene_ap.append(average_precision_score(
+                    y_true=y_true,
+                    y_score=tot_pred_deps[col].values
+                ))
+                valid_gene_count += 1
+        
+        # Log the number of skipped calculations
+        if len(tot_pred_deps.index) > valid_assay_count:
+            print(f"Skipped AP calculation for {len(tot_pred_deps.index) - valid_assay_count} cell lines with no positive examples")
+        if len(tot_pred_deps.columns) > valid_gene_count:
+            print(f"Skipped AP calculation for {len(tot_pred_deps.columns) - valid_gene_count} genes with no positive examples")
             
     return total_preds_out, assay_corr.mean(), assay_ap, gene_ap 

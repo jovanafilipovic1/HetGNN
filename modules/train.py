@@ -45,6 +45,20 @@ def parse_model_parameters(
     else:
         emb_dim = int(emb_dim)
     
+    # Parse activation function
+    activation_function = model_params.get("activation_function", "sigmoid")
+    if activation_function.lower() == "relu":
+        act_fn = torch.nn.ReLU
+    elif activation_function.lower() == "sigmoid":
+        act_fn = torch.nn.Sigmoid
+    elif activation_function.lower() == "tanh":
+        act_fn = torch.nn.Tanh
+    elif activation_function.lower() == "leakyrelu":
+        act_fn = torch.nn.LeakyReLU
+    else:
+        # Default to ReLU if not recognized
+        act_fn = torch.nn.ReLU
+    
     return {
         "embedding_dim": emb_dim,
         "hidden_features": hidden_features,
@@ -52,7 +66,8 @@ def parse_model_parameters(
         "lp_model": model_params.get("lp_model", "simple"),
         "features_dim": features_dim,
         "aggregate": model_params.get("aggregate", "mean"),
-        "model_type": model_params.get("model_type", "gnn-gnn")  # Default to gnn-gnn
+        "model_type": model_params.get("model_type", "gnn-gnn"),  # Default to gnn-gnn
+        "act_fn": act_fn
     }
 
 def prepare_model(
@@ -92,7 +107,7 @@ def prepare_model(
         node_types_to_pred=node_types,
         embedding_dim=parsed_params["embedding_dim"],
         dropout=parsed_params["dropout"],
-        act_fn=torch.nn.ReLU,
+        act_fn=parsed_params["act_fn"],
         lp_model=parsed_params["lp_model"],
         features_dim=parsed_params["features_dim"],
         aggregate=parsed_params["aggregate"],
@@ -135,7 +150,7 @@ def prepare_data_for_training(
         add_negative_train_samples=False,  # Don't add random negative samples
         edge_types=('gene', 'dependency_of', 'cell'),
         rev_edge_types=('cell', 'rev_dependency_of', 'gene'),
-        is_undirected=False
+        is_undirected=False, 
     )
 
     train_data, val_data, test_data = transform_traintest(heterodata_obj)
@@ -323,8 +338,7 @@ def train_model(
                 val_data=val_data,
                 device=device,
                 loss_fn=loss_fn,
-                edge_type_label="gene,dependency_of,cell",
-                gcn_model=model_params.get("gcn_model", "simple")
+                edge_type_label="gene,dependency_of,cell"
             )
             
             # Check for improvement in validation loss
@@ -358,8 +372,11 @@ def train_model(
             edge_type_label="gene,dependency_of,cell"
         )
         
-        assay_ap_total.append(assay_ap)
-        gene_ap_total.append(gene_ap)
+        # Only append metrics if there are valid values
+        if len(assay_ap) > 0:
+            assay_ap_total.append(np.mean(assay_ap))
+        if len(gene_ap) > 0:
+            gene_ap_total.append(np.mean(gene_ap))
         
         # Print metrics
         print({
@@ -368,8 +385,8 @@ def train_model(
             'val loss': val_loss if training_params.get("validation_ratio", 0.1) != 0.0 else "N/A", 
             'val auc': auc_val if training_params.get("validation_ratio", 0.1) != 0.0 else "N/A", 
             'val ap': ap_val if training_params.get("validation_ratio", 0.1) != 0.0 else "N/A",
-            'assay_ap': np.mean(assay_ap), 
-            'gene_ap': np.mean(gene_ap),
+            'assay_ap': np.mean(assay_ap) if len(assay_ap) > 0 else "N/A", 
+            'gene_ap': np.mean(gene_ap) if len(gene_ap) > 0 else "N/A",
             'assay_corr_sp': assay_corr_mean
         })
     
@@ -393,6 +410,8 @@ def train_model(
         "model_path": model_path,
         "best_ap": best_ap,
         "best_epoch": best_epoch,
+        "val_auc": auc_val if training_params.get("validation_ratio", 0.1) != 0.0 else 0.0,
+        "train_loss": total_train_loss/len(train_loader) if len(train_loader) > 0 else 0.0,
         "assay_ap_total": assay_ap_total,
         "gene_ap_total": gene_ap_total
     }

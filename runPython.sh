@@ -1,8 +1,8 @@
 #!/bin/bash
 #PBS -N run_python                   ## job name
 #PBS -l nodes=1:ppn=3:gpus=1         ## 1 node, 16 cores
-#PBS -l walltime=00:30:00            ## max. hours of wall time
-#PBS -l mem=8gb                    ## If not used, memory will be available proportional to the max amount
+#PBS -l walltime=48:00:00            ## max. hours of wall time (increased for grid search)
+#PBS -l mem=16gb                     ## Increased memory for grid search
 #PBS -m abe                          ## e-mail notifications (abe=aborted, begin and end)
 
 export PATH=$PATH:/user/gent/458/vsc45895/.local/bin
@@ -47,4 +47,4 @@ echo "Module Loading Complete"
 
 cd /data/gent/458/vsc45895/Thesis
 
-python3 hetgnn_main.py --epochs 30 --lr 0.0001 --batch_size 256 --emb_dim 512 --seed 42 --exp_name example_test --metapaths True
+python3 Main.py --config  config/parametersgnn.json --grid_search    

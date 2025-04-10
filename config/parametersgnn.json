@@ -5,9 +5,9 @@
       "plot_cell_embeddings": true
     },
     "graph_parameters": {
-      "cancer_type": null,
+      "cancer_type": "Non-Small Cell Lung Cancer",
       "base_path": "./Data/",
-      "cell_feat_name": "expression_marker_genes_hvg",
+      "cell_feat_name": "cnv",
       "gene_feat_name": "cgp",
       "ppi": "Reactome",
       "crp_pos": 0.5,
@@ -28,7 +28,15 @@
       "validation_ratio": 0.1,
       "test_ratio": 0.2,
       "disjoint_train_ratio": 0.0,
-      "max_grad_norm": 1.0
+      "max_grad_norm": 1.0,
+      "activation_function": "sigmoid",
+      "num_neighbors": "50,50"
+    },
+    "hyperparam_grid": {
+      "learning_rate": [0.0001, 0.0005, 0.001],
+      "batch_size": [64, 128, 256],
+      "hidden_features": ["-1,128,64", "-1,256,128", "-1,512,256"],
+      "max_grad_norm": [0.5, 1.0, 2]
     }
   }
   
