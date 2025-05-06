@@ -279,7 +279,11 @@ def train_model(
     )
     
     # Define training parameters
-    optimizer = torch.optim.Adam(hetGNNmodel.parameters(), lr=model_params.get("lr", 0.01))
+    optimizer = torch.optim.AdamW(  
+        hetGNNmodel.parameters(), 
+        lr=model_params.get("lr", 0.0001),
+        weight_decay=0.01  # Add weight decay for regularization (prevents overfitting)
+    )
     loss_fn = torch.nn.BCEWithLogitsLoss()
     
     # Training state variables

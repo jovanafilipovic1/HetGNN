@@ -7,7 +7,7 @@
     "cancer_type": "Neuroblastoma",
     "base_path": "./Data/",
     "cell_feat_name": "expression_marker_genes",
-    "gene_feat_name": "cgp",
+    "gene_feat_name": "C4",
     "ppi": "Reactome",
     "crp_pos": 0.5,
     "metapaths": [ "mutation" ]
@@ -20,7 +20,7 @@
     "emb_dim": "512",
     "lp_model": "deep",
     "aggregate": "mean",
-    "model_type": "mlp-gnn",
+    "model_type": "gnn-gnn",
     "activation_function": "sigmoid"
   },
   "training_parameters": {
@@ -36,4 +36,4 @@
     "hidden_features": ["-1,128,64", "-1,256,128", "-1,512,256"],
     "max_grad_norm": [0.5, 1.0, 2]
   }
-}
+} 

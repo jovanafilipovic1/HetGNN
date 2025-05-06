@@ -6,7 +6,7 @@
   "graph_parameters": {
     "cancer_type": "Neuroblastoma",
     "base_path": "./Data/",
-    "cell_feat_name": "expression_marker_genes_hvg",
+    "cell_feat_name": "expression_hvg",
     "gene_feat_name": "cgp",
     "ppi": "Reactome",
     "crp_pos": 0.5,

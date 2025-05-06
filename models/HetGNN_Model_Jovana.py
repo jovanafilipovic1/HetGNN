@@ -10,7 +10,7 @@ from torch import Tensor
 from itertools import chain
 from collections import OrderedDict
 from torch_geometric.data import HeteroData, Data
-from torch_geometric.nn import GCNConv, GATv2Conv, HeteroConv
+from torch_geometric.nn import GCNConv, GATv2Conv, HeteroConv, SAGEConv
 import numpy as np
 
 
@@ -490,9 +490,8 @@ class GNN_Model(BaseHetGNNModel):
             ('gene', 'rev_interacts_with', 'gene'): GATv2Conv(-1, self.hidden_dim1),
             
             # Gene-cell and cell-gene interaction with GCN
-            # Setting add_self_loops=False for cross-type edges
-            ('gene', 'dependency_of', 'cell'): GCNConv(-1, self.hidden_dim1, add_self_loops=False),
-            ('cell', 'rev_dependency_of', 'gene'): GCNConv(-1, self.hidden_dim1, add_self_loops=False)
+            ('gene', 'dependency_of', 'cell'): SAGEConv(-1, self.hidden_dim1),
+            ('cell', 'rev_dependency_of', 'gene'): SAGEConv(-1, self.hidden_dim1)
         }, aggr=aggregate)
         
         # Second convolutional layer
@@ -502,9 +501,8 @@ class GNN_Model(BaseHetGNNModel):
             ('gene', 'rev_interacts_with', 'gene'): GATv2Conv(-1, self.hidden_dim2),
             
             # Gene-cell and cell-gene interaction with GCN
-            # Setting add_self_loops=False for cross-type edges
-            ('gene', 'dependency_of', 'cell'): GCNConv(-1, self.hidden_dim2, add_self_loops=False),
-            ('cell', 'rev_dependency_of', 'gene'): GCNConv(-1, self.hidden_dim2, add_self_loops=False)
+            ('gene', 'dependency_of', 'cell'): SAGEConv(-1, self.hidden_dim2),
+            ('cell', 'rev_dependency_of', 'gene'): SAGEConv(-1, self.hidden_dim2)
         }, aggr=aggregate)
         
         # Initialize classifier based on lp_model type
@@ -591,7 +589,7 @@ def HeteroData_GNNmodel_Jovana(
     **kwargs
 ) -> nn.Module:
     """
-    Factory function to create the appropriate HetGNN model based on the model type.
+    Factory function to create the appropriate model based on the model type parameter.
     
     Args:
         heterodata: The heterogeneous graph data

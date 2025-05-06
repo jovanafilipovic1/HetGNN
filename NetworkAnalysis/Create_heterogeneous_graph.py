@@ -119,7 +119,7 @@ class Create_heterogeneous_graph:
 
     def filter_informative_genes(self, crispr_data: pd.DataFrame) -> List[str]:
         """
-        Filter for informative genes based on standard deviation and ribosomal proteins (and excluding common essential genes).
+        Filter for informative genes based on standard deviation (and ribosomal proteins) (and excluding common essential genes).
         
         Args:
             crispr_data (pd.DataFrame): CRISPR gene dependency scores
@@ -141,7 +141,9 @@ class Create_heterogeneous_graph:
         # Remove common essentials and ribosomal proteins
         # informative_genes = list(set(std_dependencies) - set(common_essentials_control) - rpls)
         # Keep common essential genes, only remove ribosomal proteins and low variance genes
-        informative_genes = list(set(std_dependencies) - rpls)
+        #informative_genes = list(set(std_dependencies) - rpls)
+        # Keep all genes with high variance 
+        informative_genes = std_dependencies
 
         return informative_genes
 
@@ -374,7 +376,7 @@ class Create_heterogeneous_graph:
         
         if "hvg" in self.cell_feature:
             # Select high variance genes
-            hvg_q = filtered_expr.std().quantile(q=0.90)
+            hvg_q = filtered_expr.std().quantile(q=0.95)
             hvg_final = filtered_expr.std()[filtered_expr.std() >= hvg_q].index
 
             filtered_expr = filtered_expr[hvg_final]
