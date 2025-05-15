@@ -37,8 +37,8 @@ This will use the configuration in `config/parameters.json` to call or create th
 - Mutations: OmicsSomaticMutationsMatrixDamaging.csv
 
 ### Additional cell feature data
-- MOSA cell line embeddings can be found in the directory `MOSA/reports/vae/files`. [Cai et al.](https://doi.org/10.1038/s41467-024-54771-4)
-- Dependency-marker associations can be found in supplementary material of the following paper: [Pacini et al. (2024b)](https://doi.org/10.1016/j.ccell.2023.12.016)
+- MOSA cell line embeddings can be found in the directory `MOSA/reports/vae/files`. [Cai et al. (2024)](https://doi.org/10.1038/s41467-024-54771-4)
+- Dependency-marker associations can be found in supplementary material of the following paper (Table S4): [Pacini et al. (2024)](https://doi.org/10.1016/j.ccell.2023.12.016)
 
 ### Gene features: [Human MsigDB Collections](https://www.gsea-msigdb.org/gsea/msigdb/human/collections.jsp)
 - C2: [chemical and genetic perturbations](https://www.gsea-msigdb.org/gsea/msigdb/download_file.jsp?filePath=/msigdb/release/2024.1.Hs/c2.cgp.v2024.1.Hs.symbols.gmt) (cgp)
@@ -89,6 +89,6 @@ All parameters are defined in `config/parameters.json`. Here's what each section
 ## Output
 
 After training, the model will save:
-- Model checkpoints in `Data/NB_results/model/`
-- Embeddings and predictions in `Data/NB_results/file/`
-- Optional visualizations in `Data/NB_results/Figures/`
+- Model checkpoints in `Data/Results/model/`
+- Embeddings and predictions in `Data/Results/file/`
+- Optional visualizations in `Data/Results/Figures/`
