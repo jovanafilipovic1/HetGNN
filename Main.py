@@ -143,7 +143,7 @@ if __name__ == "__main__":
         # Test the model if test ratio is not 0
         if training_params["test_ratio"] > 0.0:
             # First, prepare data for training to get the test data
-            train_data, val_data, test_data, _ = prepare_data_for_training(
+            train_data, val_data, test_data, train_loader, val_loader = prepare_data_for_training(
                 heterodata_obj=heterodata_obj,
                 val_ratio=training_params["validation_ratio"],
                 test_ratio=training_params["test_ratio"],

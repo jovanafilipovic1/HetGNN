@@ -167,7 +167,7 @@ def run_grid_search(
             test_metrics = {}
             if current_config["training_parameters"]["test_ratio"] > 0.0:
                 # Prepare data for training to get the test data
-                train_data, val_data, test_data, _ = prepare_data_for_training(
+                train_data, val_data, test_data, train_loader, val_loader = prepare_data_for_training(
                     heterodata_obj=heterodata_obj,
                     val_ratio=current_config["training_parameters"]["validation_ratio"],
                     test_ratio=current_config["training_parameters"]["test_ratio"],

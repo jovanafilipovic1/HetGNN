@@ -4,6 +4,7 @@ import pandas as pd
 from sklearn.metrics import roc_auc_score, average_precision_score
 from typing import Dict, Tuple, List, Any
 from modules.utils import construct_complete_predMatrix
+from torch_geometric.loader import LinkNeighborLoader
 
 def validate_model(
     model: torch.nn.Module,
