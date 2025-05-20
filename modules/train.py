@@ -2,7 +2,7 @@ import torch
 import numpy as np
 import pandas as pd
 import os
-from typing import Dict, List, Tuple, Any
+from typing import Dict, List, Tuple, Any, Optional
 from copy import deepcopy
 from torch_geometric.data import HeteroData
 from torch_geometric.loader.link_neighbor_loader import LinkNeighborLoader
@@ -125,8 +125,9 @@ def prepare_data_for_training(
     test_ratio: float,
     disjoint_train_ratio: float,
     batch_size: int,
-    num_neighbors: List[int] = [-1, -1]
-) -> Tuple[HeteroData, HeteroData, HeteroData, LinkNeighborLoader]:
+    num_neighbors: List[int] = [-1, -1],
+    cancer_type: str = None
+) -> Tuple[HeteroData, HeteroData, HeteroData, LinkNeighborLoader, Optional[LinkNeighborLoader]]:
     """
     Prepare data for training by splitting and creating loaders.
     
@@ -137,9 +138,10 @@ def prepare_data_for_training(
         disjoint_train_ratio: Ratio of disjoint training edges
         batch_size: Batch size for training
         num_neighbors: Number of neighbors to sample per layer, default samples all neighbors
+        cancer_type: Type of cancer, if None will create validation loader
         
     Returns:
-        Tuple of (train_data, val_data, test_data, train_loader)
+        Tuple of (train_data, val_data, test_data, train_loader, val_loader)
     """
     # Split graph in train/validation/test
     transform_traintest = T.RandomLinkSplit(
@@ -170,7 +172,24 @@ def prepare_data_for_training(
         num_workers=1
     )
     
-    return train_data, val_data, test_data, train_loader
+    # Create validation loader only if cancer_type is None
+    val_loader = None
+    if cancer_type is None and val_ratio > 0:
+        val_loader = LinkNeighborLoader(
+            data=val_data,
+            num_neighbors={et: num_neighbors for et in heterodata_obj.edge_types},
+            edge_label_index=(
+                ("gene", "dependency_of", "cell"),
+                val_data["gene", "dependency_of", "cell"].edge_label_index
+            ),
+            edge_label=val_data["gene", "dependency_of", "cell"].edge_label,
+            batch_size=batch_size,
+            directed=True,
+            shuffle=False,  # No need to shuffle validation data
+            num_workers=1
+        )
+    
+    return train_data, val_data, test_data, train_loader, val_loader
 
 def prepare_prediction_data(
     heterodata_obj: HeteroData,
@@ -255,13 +274,14 @@ def train_model(
         num_neighbors = num_neighbors_param
     
     # Prepare data for training
-    train_data, val_data, test_data, train_loader = prepare_data_for_training(
+    train_data, val_data, test_data, train_loader, val_loader = prepare_data_for_training(
         heterodata_obj=heterodata_obj,
         val_ratio=training_params.get("validation_ratio", 0.1),
         test_ratio=training_params.get("test_ratio", 0.2),
         disjoint_train_ratio=training_params.get("disjoint_train_ratio", 0.0),
         batch_size=training_params.get("batch_size", 128),
-        num_neighbors=num_neighbors
+        num_neighbors=num_neighbors,
+        cancer_type=graph_params.get("cancer_type")
     )
     
     # Create the model using prepare_model to avoid parameter parsing duplication
@@ -336,7 +356,17 @@ def train_model(
         ap_val, auc_val = 0, 0
         val_loss = 0
         
-        if training_params.get("validation_ratio", 0.1) != 0.0:
+        if val_loader is not None:
+            # Use validation loader if available
+            val_loss, auc_val, ap_val = validate_model(
+                model=hetGNNmodel,
+                val_data=val_loader,
+                device=device,
+                loss_fn=loss_fn,
+                edge_type_label="gene,dependency_of,cell"
+            )
+        elif training_params.get("validation_ratio", 0.1) != 0.0:
+            # Fall back to old validation method if no loader
             val_loss, auc_val, ap_val = validate_model(
                 model=hetGNNmodel,
                 val_data=val_data,
@@ -345,23 +375,23 @@ def train_model(
                 edge_type_label="gene,dependency_of,cell"
             )
             
-            # Check for improvement in validation loss
-            if val_loss < best_val_loss:
-                best_val_loss = val_loss
-                counter = 0  # Reset counter
-            else:
-                counter += 1  # Increment counter
+        # Check for improvement in validation loss
+        if val_loss < best_val_loss:
+            best_val_loss = val_loss
+            counter = 0  # Reset counter
+        else:
+            counter += 1  # Increment counter
+        
+        # Check for improvement in AP
+        if ap_val > best_ap:
+            best_ap = ap_val
+            best_ap_model = deepcopy(hetGNNmodel.state_dict())
+            best_epoch = epoch
             
-            # Check for improvement in AP
-            if ap_val > best_ap:
-                best_ap = ap_val
-                best_ap_model = deepcopy(hetGNNmodel.state_dict())
-                best_epoch = epoch
-                
-            # Early stopping check
-            if counter >= patience:
-                print(f"Early stopping triggered after {epoch} epochs. No improvement for {patience} consecutive epochs.")
-                break
+        # Early stopping check
+        if counter >= patience:
+            print(f"Early stopping triggered after {epoch} epochs. No improvement for {patience} consecutive epochs.")
+            break
         
         # Evaluate on full prediction data
         total_preds_out, assay_corr_mean, assay_ap, gene_ap = evaluate_full_predictions(

@@ -17,7 +17,7 @@ def validate_model(
     
     Args:
         model: The GNN model
-        val_data: Validation data
+        val_data: Validation data or validation loader
         device: Device to run validation on ('cpu' or 'cuda:x')
         loss_fn: Loss function
         edge_type_label: Edge type label to use for prediction
@@ -26,33 +26,55 @@ def validate_model(
         Tuple of (validation loss, AUC, AP)
     """
     model.eval()
+    total_val_loss = 0
+    all_preds = []
+    all_labels = []
+    
     with torch.no_grad():
-        val_data = val_data.to(device)
-        out = model(val_data, edge_type_label=edge_type_label)
+        # Handle both validation data and validation loader
+        if isinstance(val_data, LinkNeighborLoader):
+            # Process validation data in batches
+            for sampled_data in val_data:
+                sampled_data = sampled_data.to(device)
+                out = model(sampled_data, edge_type_label=edge_type_label)
+                pred = torch.sigmoid(out)
+                ground_truth = sampled_data["gene", "dependency_of", "cell"].edge_label
+                total_val_loss += loss_fn(out, ground_truth).item()
+                
+                all_preds.extend(pred.cpu().numpy())
+                all_labels.extend(ground_truth.cpu().numpy())
+            
+            # Average the loss over all batches
+            val_loss = total_val_loss / len(val_data)
+            all_preds = np.array(all_preds)
+            all_labels = np.array(all_labels)
+        else:
+            # Process entire validation dataset at once
+            val_data = val_data.to(device)
+            out = model(val_data, edge_type_label=edge_type_label)
+            pred = torch.sigmoid(out)
+            ground_truth = val_data["gene", "dependency_of", "cell"].edge_label
+            val_loss = loss_fn(out, ground_truth).item()
+            
+            all_preds = pred.cpu().numpy()
+            all_labels = ground_truth.cpu().numpy()
         
-        pred = torch.sigmoid(out)
-        ground_truth = val_data["gene", "dependency_of", "cell"].edge_label
-        val_loss = loss_fn(out, ground_truth)
-        
-        # Check if there are positive examples in ground truth
-        ground_truth_cpu = ground_truth.cpu()
-        pred_cpu = pred.cpu()
-        
+        # Calculate metrics
         # For AP, we need at least one positive example
-        if ground_truth_cpu.sum() > 0:
-            ap_val = average_precision_score(ground_truth_cpu, pred_cpu)
+        if np.sum(all_labels) > 0:
+            ap_val = average_precision_score(all_labels, all_preds)
         else:
             print("Warning: No positive examples in validation set, setting AP to 0.0")
             ap_val = 0.0
             
         # For AUC, we need at least one positive and one negative example
-        if ground_truth_cpu.sum() > 0 and len(ground_truth_cpu) - ground_truth_cpu.sum() > 0:
-            auc_val = roc_auc_score(ground_truth_cpu, pred_cpu)
+        if np.sum(all_labels) > 0 and len(all_labels) - np.sum(all_labels) > 0:
+            auc_val = roc_auc_score(all_labels, all_preds)
         else:
             print("Warning: Not enough positive/negative examples in validation set for AUC calculation, setting AUC to 0.5")
             auc_val = 0.5
         
-    return val_loss.item(), auc_val, ap_val
+    return val_loss, auc_val, ap_val
 
 def evaluate_full_predictions(
     model: torch.nn.Module,
