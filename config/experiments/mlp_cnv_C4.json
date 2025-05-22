@@ -4,7 +4,7 @@
     "plot_cell_embeddings": true
   },
   "graph_parameters": {
-    "cancer_type": "Neuroblastoma",
+    "cancer_type": null,
     "base_path": "./Data/",
     "cell_feat_name": "cnv",
     "gene_feat_name": "C4",
@@ -31,9 +31,7 @@
     "max_grad_norm": 1.0
   },
   "hyperparam_grid": {
-    "learning_rate": [0.0001, 0.0005, 0.001],
-    "batch_size": [64, 128, 256],
-    "hidden_features": ["-1,128,64", "-1,256,128", "-1,512,256"],
-    "max_grad_norm": [0.5, 1.0, 2]
+    "learning_rate": [0.0001, 0.001],
+    "batch_size": [128, 256]
   }
 } 

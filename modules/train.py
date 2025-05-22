@@ -157,6 +157,9 @@ def prepare_data_for_training(
 
     train_data, val_data, test_data = transform_traintest(heterodata_obj)
     
+    # Optimize number of workers based on CPU cores
+    num_workers = min(4, os.cpu_count() or 1)  # Use up to 4 workers
+    
     # Create the loader using the existing edge labels, without random negative sampling
     train_loader = LinkNeighborLoader(
         data=train_data,
@@ -169,7 +172,9 @@ def prepare_data_for_training(
         batch_size=batch_size,
         directed=True,
         shuffle=True,
-        num_workers=1
+        num_workers=num_workers,
+        persistent_workers=True,  # Keep workers alive between epochs
+        pin_memory=True  # Pin memory for faster GPU transfer
     )
     
     # Create validation loader only if cancer_type is None
@@ -186,7 +191,9 @@ def prepare_data_for_training(
             batch_size=batch_size,
             directed=True,
             shuffle=False,  # No need to shuffle validation data
-            num_workers=1
+            num_workers=num_workers,
+            persistent_workers=True,
+            pin_memory=True
         )
     
     return train_data, val_data, test_data, train_loader, val_loader
@@ -302,7 +309,7 @@ def train_model(
     optimizer = torch.optim.AdamW(  
         hetGNNmodel.parameters(), 
         lr=model_params.get("lr", 0.0001),
-        weight_decay=0.01  # Add weight decay for regularization (prevents overfitting)
+        weight_decay=0.01  # Add weight decay for regularization
     )
     loss_fn = torch.nn.BCEWithLogitsLoss()
     
@@ -336,10 +343,7 @@ def train_model(
             optimizer.zero_grad()
             sampled_data = sampled_data.to(device)
             
-            if model_params.get("gcn_model", "simple") == 'gat':
-                out = hetGNNmodel(sampled_data, edge_type_label="gene,dependency_of,cell")
-            else:
-                out = hetGNNmodel(sampled_data, edge_type_label="gene,dependency_of,cell")
+            out = hetGNNmodel(sampled_data, edge_type_label="gene,dependency_of,cell")
                 
             ground_truth = sampled_data["gene", "dependency_of", "cell"].edge_label
             loss = loss_fn(out, ground_truth)
