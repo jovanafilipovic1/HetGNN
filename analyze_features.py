@@ -9,30 +9,32 @@ import pandas as pd
 import os
 from datetime import datetime
 
+ # Load model and data
+model_path = 'Results/Neuroblastoma_cgp_expression_marker_genes_gnn/models/Neuroblastoma_cgp_expression_marker_genes_gnn_seed37_epoch14.pt'
+data_path = 'Data/multigraphs/heteroData_gene_cell_Neuroblastoma_cgp_expression_marker_genes_META2.pt'
+
+
 # Configuration parameters
 MODEL_CONFIG = {
-    'model_type': 'gnn-mlp',  # Options: 'gnn-gnn', 'gnn-mlp', 'mlp', 'gnn'
+    'model_type': 'gnn',  # Options: 'gnn-gnn', 'gnn-mlp', 'mlp', 'gnn'
     'embedding_dim': 512,
-    'hidden_features': [-1, 256, 128],  # Adjusted for GNN-MLP architecture
+    'hidden_features': [-1, 512, 256],  # Adjusted to match checkpoint
     'dropout': 0.2,
-    'act_fn': nn.ReLU,  # Changed to ReLU as it's more common in GNN architectures
+    'act_fn': nn.Sigmoid,  
     'lp_model': 'deep',  # Options: 'simple', 'deep'
-    'aggregate': 'sum'
+    'aggregate': 'mean'
 }
 
-def create_results_directory(base_path='Results/feature_analysis'):
+def create_results_directory(base_path='Results/feature_analysis', model_type=MODEL_CONFIG['model_type']):
     """
     Create a directory for saving analysis results.
-    
-    Args:
-        base_path: Base path for results directory
-        
+
     Returns:
         Path to the created directory
     """
     # Create timestamp for unique directory name
     timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-    results_dir = os.path.join(base_path, f'analysis_{timestamp}')
+    results_dir = os.path.join(base_path, f'{model_type}_{timestamp}')
     
     # Create directory if it doesn't exist
     os.makedirs(results_dir, exist_ok=True)
@@ -283,12 +285,9 @@ def save_importance_scores(importance_scores, gene_names, output_dir):
 
 if __name__ == "__main__":
     # Create results directory
-    results_dir = create_results_directory()
+    results_dir = create_results_directory(model_type=MODEL_CONFIG['model_type'])
     
-    # Load model and data
-    model_path = 'Results/Neuroblastoma_cgp_expression_marker_genes_gnn-mlp/models/Neuroblastoma_cgp_expression_marker_genes_gnn-mlp_seed37_epoch9.pt'
-    data_path = 'Data/multigraphs/heteroData_gene_cell_Neuroblastoma_cgp_expression_marker_genes_META2.pt'
-    
+   
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
     model, data = load_model_and_data(model_path, data_path, device)
     

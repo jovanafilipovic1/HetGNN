@@ -180,8 +180,9 @@ class Create_heterogeneous_graph:
 
     def create_mutation_network(self, focus_genes: List[str], focus_cells: List[str]) -> pd.DataFrame:
         """
-        Create a mutation network from somatic mutation data.
-        Add edges between cell lines and genes where a mutation exists (non-zero value).
+        Create a mutation network from somatic mutation data (damaging and hotspot).
+        An edge is drawn if a cell line is mutated in a gene, according to either dataset.
+        If a mutation exists in both, the higher weight is taken.
         
         Args:
             focus_genes (List[str]): List of genes to consider for mutations
@@ -191,39 +192,74 @@ class Create_heterogeneous_graph:
             pd.DataFrame: Mutation edge list with columns ['cell', 'gene', 'value']
         """
         # Load mutation data
-        mutation_path = self.BASE_PATH + 'Depmap/OmicsSomaticMutationsMatrixDamaging.csv'
-        print(f"Loading mutation data from {mutation_path}")
+        damaging_path = self.BASE_PATH + 'Depmap/OmicsSomaticMutationsMatrixDamaging.csv'
+        hotspot_path = self.BASE_PATH + 'Depmap/OmicsSomaticMutationsMatrixHotspot.csv'
+        print(f"Loading mutation data from {damaging_path} (damaging) and {hotspot_path} (hotspot)")
         
+        try:
+            damaging_data = pd.read_csv(damaging_path, header=0, index_col=0)
+        except FileNotFoundError:
+            print(f"Warning: Damaging mutation file not found at {damaging_path}")
+            damaging_data = pd.DataFrame()
+
+        try:
+            hotspot_data = pd.read_csv(hotspot_path, header=0, index_col=0)
+        except FileNotFoundError:
+            print(f"Warning: Hotspot mutation file not found at {hotspot_path}")
+            hotspot_data = pd.DataFrame()
+
+        # Clean gene column names (remove any text after space if present, ensure string type)
+        if not damaging_data.empty:
+            damaging_data.columns = [str(col).split(' ')[0] for col in damaging_data.columns]
+        if not hotspot_data.empty:
+            hotspot_data.columns = [str(col).split(' ')[0] for col in hotspot_data.columns]
         
-        mutation_data = pd.read_csv(mutation_path, header=0, index_col=0)
-        # Clean gene column names (remove any text after space if present)
-        mutation_data.columns = [i.split(' ')[0] for i in mutation_data.columns]
-    
-        # Filter for relevant genes and cells
-        relevant_genes = [g for g in focus_genes if g in mutation_data.columns]
-        relevant_cells = [c for c in focus_cells if c in mutation_data.index]
+        # Determine relevant genes and cells for each dataset based on focus_genes and focus_cells
+        damaging_genes_to_use = [g for g in focus_genes if g in damaging_data.columns] if not damaging_data.empty else []
+        damaging_cells_to_use = [c for c in focus_cells if c in damaging_data.index] if not damaging_data.empty else []
         
-        if len(relevant_genes) == 0 or len(relevant_cells) == 0:
-            print(f"Warning: No overlapping genes or cells found in mutation data")
-            print(f"Genes overlap: {len(relevant_genes)}/{len(focus_genes)}")
-            print(f"Cells overlap: {len(relevant_cells)}/{len(focus_cells)}")
+        hotspot_genes_to_use = [g for g in focus_genes if g in hotspot_data.columns] if not hotspot_data.empty else []
+        hotspot_cells_to_use = [c for c in focus_cells if c in hotspot_data.index] if not hotspot_data.empty else []
+
+        can_process_damaging = bool(damaging_genes_to_use and damaging_cells_to_use)
+        can_process_hotspot = bool(hotspot_genes_to_use and hotspot_cells_to_use)
+
+        if not (can_process_damaging or can_process_hotspot):
+            print("Warning: No overlapping genes or cells found in either damaging or hotspot mutation datasets "
+                  "for the given focus_genes and focus_cells after attempting to load data.")
             return pd.DataFrame(columns=['cell', 'gene', 'value'])
+            
+        combined_mutation_dict = {}
+
+        # Process damaging mutations
+        if can_process_damaging:
+            # Ensure correct slicing even if lists are empty, though `can_process_damaging` guards this
+            filtered_damaging = damaging_data.loc[damaging_cells_to_use, damaging_genes_to_use]
+            for cell, row in filtered_damaging.iterrows():
+                for gene, value in row.items():
+                    if pd.notna(value) and value != 0:
+                        combined_mutation_dict[(cell, gene)] = float(value)
+
+        # Process hotspot mutations and combine with damaging
+        if can_process_hotspot:
+            # Ensure correct slicing
+            filtered_hotspot = hotspot_data.loc[hotspot_cells_to_use, hotspot_genes_to_use]
+            for cell, row in filtered_hotspot.iterrows():
+                for gene, value in row.items():
+                    if pd.notna(value) and value != 0:
+                        float_value = float(value)
+                        current_max_value = combined_mutation_dict.get((cell, gene), 0.0)
+                        combined_mutation_dict[(cell, gene)] = max(current_max_value, float_value)
         
-        # Filter mutation data to relevant genes and cells
-        filtered_mutation = mutation_data.loc[relevant_cells, relevant_genes]
-        
-        # Create edge list for non-zero values
-        mutation_edges = []
-        
-        for cell, row in filtered_mutation.iterrows():
-            for gene, value in row.items():
-                if value != 0:  # Only add edges for non-zero values
-                    mutation_edges.append([cell, gene, value])
-        
-        # Create dataframe with cell, gene, and value columns
+        if not combined_mutation_dict:
+            print("No non-zero mutation edges found after processing both datasets.")
+            return pd.DataFrame(columns=['cell', 'gene', 'value'])
+
+        # Create dataframe from the combined dictionary
+        mutation_edges = [[cell, gene, val] for (cell, gene), val in combined_mutation_dict.items()]
         mutation_df = pd.DataFrame(mutation_edges, columns=['cell', 'gene', 'value'])
         
-        print(f"Created mutation network with {len(mutation_df)} edges")
+        print(f"Created mutation network with {len(mutation_df)} edges from damaging and hotspot data.")
         return mutation_df
 
     def read_gmt_file(self, file_path: str, gene_list: List[str]) -> Dict[str, Set[str]]:
