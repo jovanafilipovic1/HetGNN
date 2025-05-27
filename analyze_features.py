@@ -9,23 +9,8 @@ import pandas as pd
 import os
 from datetime import datetime
 
- # Load model and data
-model_path = 'Results/Neuroblastoma_cgp_expression_marker_genes_gnn/models/Neuroblastoma_cgp_expression_marker_genes_gnn_seed37_epoch14.pt'
-data_path = 'Data/multigraphs/heteroData_gene_cell_Neuroblastoma_cgp_expression_marker_genes_META2.pt'
 
-
-# Configuration parameters
-MODEL_CONFIG = {
-    'model_type': 'gnn',  # Options: 'gnn-gnn', 'gnn-mlp', 'mlp', 'gnn'
-    'embedding_dim': 512,
-    'hidden_features': [-1, 512, 256],  # Adjusted to match checkpoint
-    'dropout': 0.2,
-    'act_fn': nn.Sigmoid,  
-    'lp_model': 'deep',  # Options: 'simple', 'deep'
-    'aggregate': 'mean'
-}
-
-def create_results_directory(base_path='Results/feature_analysis', model_type=MODEL_CONFIG['model_type']):
+def create_results_directory(base_path='Results/feature_analysis', model_type='gnn-gnn'):
     """
     Create a directory for saving analysis results.
 
@@ -80,7 +65,7 @@ def load_gene_names(base_path='Data'):
     
     return list(unique_valid_marker_genes)
 
-def load_model_and_data(model_path, data_path, device='cuda' if torch.cuda.is_available() else 'cpu', model_config=None):
+def load_model_and_data(model_path, data_path, device='cuda' if torch.cuda.is_available() else 'cpu', model_config):
     """
     Load the trained model and data.
     
@@ -111,7 +96,7 @@ def load_model_and_data(model_path, data_path, device='cuda' if torch.cuda.is_av
     print(f"Feature dimensions: {features_dim}")
     
     # Use provided config or fall back to global config
-    config = model_config if model_config is not None else MODEL_CONFIG
+    config = model_config
     
     # Create model with same architecture as saved model
     print(f"Loading model from: {model_path}")
@@ -283,28 +268,3 @@ def save_importance_scores(importance_scores, gene_names, output_dir):
         for _, row in cell_df.head(10).iterrows():
             f.write(f"{row['gene_name']}: {row['importance_score']:.4f}\n")
 
-if __name__ == "__main__":
-    # Create results directory
-    results_dir = create_results_directory(model_type=MODEL_CONFIG['model_type'])
-    
-   
-    device = 'cuda' if torch.cuda.is_available() else 'cpu'
-    model, data = load_model_and_data(model_path, data_path, device)
-    
-    # Load gene names
-    gene_names = load_gene_names()
-    
-    # Compute feature importance
-    importance_scores = compute_feature_importance(model, data, device)
-    
-    # Analyze and visualize results
-    analyze_feature_importance(importance_scores, gene_names)
-    
-    # Save results
-    save_importance_scores(importance_scores, gene_names, results_dir)
-    
-    print(f"\nAnalysis complete! Results have been saved in: {results_dir}")
-    print("The following files have been created:")
-    print("1. cell_features_importance.csv - Complete cell feature importance scores")
-    print("2. top_cell_features.png - Visualization of top 20 cell features")
-    print("3. analysis_summary.txt - Summary statistics and top features")
