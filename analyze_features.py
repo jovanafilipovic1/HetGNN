@@ -65,7 +65,7 @@ def load_gene_names(base_path='Data'):
     
     return list(unique_valid_marker_genes)
 
-def load_model_and_data(model_path, data_path, device='cuda' if torch.cuda.is_available() else 'cpu', model_config):
+def load_model_and_data(model_path, data_path, model_config, device='cuda' if torch.cuda.is_available() else 'cpu'):
     """
     Load the trained model and data.
     
