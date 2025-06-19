@@ -183,8 +183,20 @@ class GNN_GNN_Model(BaseHetGNNModel):
         initial_gene_embeddings = x_dict[self.node_types[0]].clone()
         initial_cell_embeddings = x_dict[self.node_types[1]].clone()
         
+        # Prepare kwargs for HeteroConv layers
+        kwargs = {}
+        try:
+            kwargs['edge_attr_dict'] = data.edge_attr_dict
+        except (AttributeError, KeyError):
+            pass  # No edge_attr found
+        
+        try:
+            kwargs['edge_weight_dict'] = data.edge_weight_dict
+        except (AttributeError, KeyError):
+            pass # No edge_weight found
+        
         # First layer processing with skip connections
-        layer1_output = self.conv1(x_dict, data.edge_index_dict, edge_attr_dict=data.edge_attr_dict)
+        layer1_output = self.conv1(x_dict, data.edge_index_dict, **kwargs)
         
         # Apply skip connections
         projected_cell_skip1 = self.cell_skip_proj1(initial_cell_embeddings)
@@ -203,7 +215,7 @@ class GNN_GNN_Model(BaseHetGNNModel):
         x_dict = {k: self.dropout(self.act_fn(v)) for k, v in x_dict.items()}
         
         # Second layer processing with skip connections
-        layer2_output = self.conv2(x_dict, data.edge_index_dict, edge_attr_dict=data.edge_attr_dict)
+        layer2_output = self.conv2(x_dict, data.edge_index_dict, **kwargs)
         
         # Apply skip connections
         projected_cell_skip2 = self.cell_skip_proj2(cell_layer1_output)
@@ -315,10 +327,23 @@ class GNN_MLP_Model(BaseHetGNNModel):
         initial_gene_embeddings = x_dict[self.node_types[0]].clone()
         initial_cell_embeddings = x_dict[self.node_types[1]].clone()
         
+        # Prepare kwargs for HeteroConv layers
+        kwargs = {}
+        try:
+            kwargs['edge_attr_dict'] = data.edge_attr_dict
+        except (AttributeError, KeyError):
+            pass
+        
+        try:
+            kwargs['edge_weight_dict'] = data.edge_weight_dict
+        except (AttributeError, KeyError):
+            pass
+        
         # First layer processing - GNN for genes, MLP for cells
         # Process genes with GNN
         gene_x_dict = {'gene': x_dict['gene']}
-        gene_x_dict = self.conv1(gene_x_dict, data.edge_index_dict, edge_attr_dict=data.edge_attr_dict)
+        gene_edge_index_dict = {k: v for k, v in data.edge_index_dict.items() if k in self.conv1.convs}
+        gene_x_dict = self.conv1(gene_x_dict, gene_edge_index_dict, **kwargs)
         
         # Apply skip connection for genes
         projected_gene_skip1 = self.gene_skip_proj1(initial_gene_embeddings)
@@ -340,7 +365,8 @@ class GNN_MLP_Model(BaseHetGNNModel):
         # Second layer processing - GNN for genes, MLP for cells
         # Process genes with GNN
         gene_x_dict = {'gene': x_dict['gene']}
-        gene_x_dict = self.conv2(gene_x_dict, data.edge_index_dict, edge_attr_dict=data.edge_attr_dict)
+        gene_edge_index_dict = {k: v for k, v in data.edge_index_dict.items() if k in self.conv2.convs}
+        gene_x_dict = self.conv2(gene_x_dict, gene_edge_index_dict, **kwargs)
         
         # Apply skip connection for genes
         projected_gene_skip2 = self.gene_skip_proj2(gene_layer1_output)
@@ -529,8 +555,20 @@ class GNN_Model(BaseHetGNNModel):
         initial_gene_embeddings = x_dict[self.node_types[0]].clone()
         initial_cell_embeddings = x_dict[self.node_types[1]].clone()
         
+        # Prepare kwargs for HeteroConv layers
+        kwargs = {}
+        try:
+            kwargs['edge_attr_dict'] = data.edge_attr_dict
+        except (AttributeError, KeyError):
+            pass  # No edge_attr found
+        
+        try:
+            kwargs['edge_weight_dict'] = data.edge_weight_dict
+        except (AttributeError, KeyError):
+            pass # No edge_weight found
+        
         # First layer processing with skip connections
-        layer1_output = self.conv1(x_dict, data.edge_index_dict, edge_attr_dict=data.edge_attr_dict)
+        layer1_output = self.conv1(x_dict, data.edge_index_dict, **kwargs)
         
         # Apply skip connections
         projected_cell_skip1 = self.cell_skip_proj1(initial_cell_embeddings)
@@ -549,7 +587,7 @@ class GNN_Model(BaseHetGNNModel):
         x_dict = {k: self.dropout(self.act_fn(v)) for k, v in x_dict.items()}
         
         # Second layer processing with skip connections
-        layer2_output = self.conv2(x_dict, data.edge_index_dict, edge_attr_dict=data.edge_attr_dict)
+        layer2_output = self.conv2(x_dict, data.edge_index_dict, **kwargs)
         
         # Apply skip connections
         projected_cell_skip2 = self.cell_skip_proj2(cell_layer1_output)
